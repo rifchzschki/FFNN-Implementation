@@ -82,7 +82,7 @@ class FFNN:
             self.neurons[id] = Neuron(id)
         return self.neurons[id]
 
-    def add_edge(self, id1: int, id2: int) -> None:
+    def add_edge(self, id1: int, id2: int, weight: float) -> None:
         """Menambahkan hubungan antara dua neuron."""
         neuron1 = self.__add_neuron(id1)
         neuron2 = self.__add_neuron(id2)
