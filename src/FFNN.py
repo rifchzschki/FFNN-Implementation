@@ -86,6 +86,7 @@ class FFNN:
         """Menambahkan hubungan antara dua neuron."""
         neuron1 = self.__add_neuron(id1)
         neuron2 = self.__add_neuron(id2)
+        self.weight[tuple[neuron1,neuron2]] = weight
         neuron1.add_neighboor(neuron2)
 
     def forward(self):
