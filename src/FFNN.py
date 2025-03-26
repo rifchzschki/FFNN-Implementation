@@ -1,5 +1,5 @@
 import numpy as np
-
+import pickle
 class ActivationFunction:
     @staticmethod
     def linear(x: np.ndarray) -> np.ndarray:
@@ -39,7 +39,15 @@ class ActivationFunction:
         exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
         return exp_x / np.sum(exp_x, axis=1, keepdims=True)
     
-
+class LossFunction:
+    @staticmethod
+    def mse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        return np.mean((y_true - y_pred) ** 2)
+    
+    @staticmethod
+    def mse_derivative(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+        return -2 * (y_true - y_pred)/y_true.shape[0]
+    
 
 class Neuron:
     def __init__(self, id: int):
@@ -75,6 +83,7 @@ class FFNN:
         self.bias: list[int] = []
         self.neurons: dict[int, Neuron] = {}
         self.layers: list[Layer] = []
+        self.output : list[list[float]] = [] # Diisi ketika forward propagation
 
     def __add_neuron(self, id: int) -> Neuron:
         """Menambahkan neuron baru ke dalam graph."""
@@ -97,9 +106,45 @@ class FFNN:
         '''Melakukan perhitungan update bobot'''
         pass
     
-    def backprop(self):
+    def backprop(self, X:np.ndarray, y: np.ndarray, learning_rate: float, batch_size: int = 32):
         '''Melakukan update bobot dan bias untuk hasil inferensi yang lebih baik'''
-        pass
+        y_pred = self.forward(X)
+        if self.loss == 'mse':
+            loss = LossFunction.mse(y, y_pred)
+            loss_derivative = LossFunction.mse_derivative(y, y_pred)
+        else:
+            raise ValueError(f"Loss function {self.loss} is not supported")
+
+        
+        current_layer = self.N_layer - 1
+        outmatrix = np.array(self.output)
+        for layer in reversed(self.layers):
+            if current_layer == self.N_layer - 1:
+                for neuron in layer.neurons_id:
+                    delta = loss_derivative(y, y_pred)
+                    if self.activation[current_layer] == 'sigmoid':
+                        delta = delta * ActivationFunction.sigmoid_derivative(y_pred)
+                    xij = outmatrix[current_layer-1][neuron]
+                    for neighboor in self.neurons[neuron].neighboors:
+                        wij = self.weight[(self.neurons[neighboor.id], self.neurons[neuron])]
+                        self.gradient[(self.neurons[neighboor.id], self.neurons[neuron])] = delta * xij
+                        self.weight[(self.neurons[neighboor.id], self.neurons[neuron])] = wij - learning_rate * self.gradient[(self.neurons[neighboor.id], self.neurons[neuron])]
+            else:
+                for neuron in layer.neurons_id:
+                    if self.activation[current_layer] == 'sigmoid':
+                        delta = ActivationFunction.sigmoid_derivative(outmatrix[current_layer-1][neuron])
+                    xij = outmatrix[current_layer-1][neuron]
+                    sum_weighted_gradient = 0
+                    for neighboor in self.neurons[neuron].neighboors:
+                        if neighboor.id in self.layers[current_layer+1].neurons_id:
+                            wij = self.weight[(self.neurons[neuron], self.neurons[neighboor.id])]
+                            sum_weighted_gradient += wij * self.gradient[(self.neurons[neuron], self.neurons[neighboor.id])]
+                    delta *= sum_weighted_gradient
+                    for neighboor in self.neurons[neuron].neighboors:
+                        if neighboor.id in self.layers[current_layer-1].neurons_id:
+                            wij = self.weight[(self.neurons[neighboor.id], self.neurons[neuron])]
+                            self.gradient[(self.neurons[neighboor.id], self.neurons[neuron])] = delta * xij
+                            self.weight[(self.neurons[neighboor.id], self.neurons[neuron])] = wij - learning_rate * self.gradient[(self.neurons[neighboor.id], self.neurons[neuron])]
 
     def fit(self, learning_rate :float, batch_size: int = 32, epochs: int = 100, verbose: bool = True):
         '''Melakukan pelatihan (forward-backward) sebanyak jumlah epochs'''
@@ -111,11 +156,13 @@ class FFNN:
     
     def load(self, nama_file: str):
         '''Mengambil data yang sudah disimpan sebelumnya'''
-        pass
+        with open(nama_file, 'rb') as f:
+            return pickle.load(f)
     
     def save(self, nama_file: str):
         '''Melakukan prediksi dari hasil pelatihan model'''
-        pass
+        with open(nama_file, 'wb') as f:
+            pickle.dump(self, f)
     
 
      
