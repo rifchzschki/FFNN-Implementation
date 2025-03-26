@@ -52,7 +52,7 @@ class LossFunction:
 class Neuron:
     def __init__(self, id: int):
         self.id = id
-        self.neighboors: set[Neuron] = set()
+        self.neighbors: set[Neuron] = set()
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Neuron):
@@ -62,15 +62,24 @@ class Neuron:
     def __hash__(self) -> int:
         return hash(self.id)
     
-    def add_neighboor(self, neuron: "Neuron") -> None:
+    def add_neighbor(self, neuron: "Neuron") -> None:
         """Menambahkan neuron sebagai tetangga."""
-        self.neighboors.add(neuron)
-        neuron.neighboors.add(self) 
-    
+        self.neighbors.add(neuron)
+        neuron.neighbors.add(self)
+
+    def print_neighbors(self):
+        print(f"Daftar tetangga dari Neuron dengan ID: {self.id}")
+        for neuron in self.neighbors:
+            print(neuron.id)
 class Layer:
     def __init__(self, id: int, neurons_id: list[int]):
         self.id: int = id
         self.neurons_id: list[int] = neurons_id
+
+    def debug(self):
+        print(f"Layer ke-{self.id}")
+        for i in range (len(self.neurons_id)):
+            print(f"Neuron ID pada Layer ke-{self.id} : {self.neurons_id[i]}")
 
 class FFNN:
     def __init__(self, N_layer: int, loss:str, activation:list[str], N_neuron_layer: list[int]) -> None:
@@ -96,7 +105,7 @@ class FFNN:
         neuron1 = self.__add_neuron(id1)
         neuron2 = self.__add_neuron(id2)
         self.weight[tuple[neuron1,neuron2]] = weight
-        neuron1.add_neighboor(neuron2)
+        neuron1.add_neighbor(neuron2)
 
     def forward(self):
         '''Melakukan forward propagation untuk melihat hasil inferensi'''
@@ -183,6 +192,17 @@ class FFNN:
         '''Melakukan prediksi dari hasil pelatihan model'''
         with open(nama_file, 'wb') as f:
             pickle.dump(self, f)
-    
 
+    def debug(self):
+        print("Banyak Layer: ", self.N_layer)
+        print("Loss Function yang digunakan: ", self.loss)
+        print("Activation Function yang digunakan: ")
+        for i in range(len(self.activation)):
+            print(f"Activation function yang digunakan layer ke-{i+2} : {self.activation[i]}")
+        for i in range(len(self.N_neuron_layer)):
+            print(f"Banyak neuron pada layer ke-{i+1} : {self.N_neuron_layer[i]}")
+        for layer in self.layers:
+            layer.debug()
+        for i in range (len(self.neurons)):
+            self.neurons[i].print_neighbors()
      
