@@ -1,4 +1,16 @@
 import numpy as np
+class LossFunction:
+    @staticmethod
+    def MSE(y_true, y_pred):
+        return np.mean((y_true - y_pred) ** 2)
+    @staticmethod
+    def CCE(y_true, y_pred):
+        y_pred = np.clip(y_pred, 1e-15, 1 - 1e-15)
+        return -np.mean(np.sum(y_true * np.log(y_pred), axis=1))
+    @staticmethod
+    def BCE(y_true, y_pred):
+        y_pred = np.clip(y_pred, 1e-15, 1 - 1e-15)
+        return -np.mean(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
 
 class ActivationFunction:
     @staticmethod
@@ -131,7 +143,7 @@ class FFNN:
         print("Loss Function yang digunakan: ", self.loss)
         print("Activation Function yang digunakan: ")
         for i in range(len(self.activation)):
-            print(f"Activation function yang digunakan layer ke-{i+1} : {self.activation[i]}")
+            print(f"Activation function yang digunakan layer ke-{i+2} : {self.activation[i]}")
         for i in range(len(self.N_neuron_layer)):
             print(f"Banyak neuron pada layer ke-{i+1} : {self.N_neuron_layer[i]}")
         for layer in self.layers:
