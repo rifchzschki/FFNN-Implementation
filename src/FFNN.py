@@ -102,49 +102,77 @@ class FFNN:
         '''Melakukan forward propagation untuk melihat hasil inferensi'''
         pass
 
-    def __update_weight(self):
+    def __update_weight(self, tuple_neuron: tuple[Neuron, Neuron], weight_update: float) -> None:
         '''Melakukan perhitungan update bobot'''
-        pass
+        self.weight[tuple_neuron] -= weight_update
     
-    def backprop(self, X:np.ndarray, y: np.ndarray, learning_rate: float, batch_size: int = 32):
-        '''Melakukan update bobot dan bias untuk hasil inferensi yang lebih baik'''
+    def backprop(self, X: np.ndarray, y: np.ndarray, learning_rate: float, batch_size: int = 32):
+        '''Melakukan update bobot dan bias setiap batch size tercapai'''
         y_pred = self.forward(X)
+        
         if self.loss == 'mse':
-            loss = LossFunction.mse(y, y_pred)
             loss_derivative = LossFunction.mse_derivative(y, y_pred)
         else:
             raise ValueError(f"Loss function {self.loss} is not supported")
 
-        
         current_layer = self.N_layer - 1
         outmatrix = np.array(self.output)
+        weight_updates = {}
+        batch_counter = 0
+
         for layer in reversed(self.layers):
             if current_layer == self.N_layer - 1:
                 for neuron in layer.neurons_id:
                     delta = loss_derivative(y, y_pred)
                     if self.activation[current_layer] == 'sigmoid':
-                        delta = delta * ActivationFunction.sigmoid_derivative(y_pred)
-                    xij = outmatrix[current_layer-1][neuron]
-                    for neighboor in self.neurons[neuron].neighboors:
-                        wij = self.weight[(self.neurons[neighboor.id], self.neurons[neuron])]
-                        self.gradient[(self.neurons[neighboor.id], self.neurons[neuron])] = delta * xij
-                        self.weight[(self.neurons[neighboor.id], self.neurons[neuron])] = wij - learning_rate * self.gradient[(self.neurons[neighboor.id], self.neurons[neuron])]
+                        delta *= ActivationFunction.sigmoid_derivative(y_pred)
+                    elif self.activation[current_layer] == 'relu':
+                        delta *= ActivationFunction.relu_derivative(y_pred)
+                    elif self.activation[current_layer] == 'tanh':
+                        delta *= ActivationFunction.tanh_derivative(y_pred)
+                    elif self.activation[current_layer] == 'linear':
+                        delta *= ActivationFunction.linear_derivative(y_pred)
+                    xij = outmatrix[current_layer - 1][neuron]
+                    
+                    for neighbor in self.neurons[neuron].neighboors:
+                        tuple_neuron = (self.neurons[neighbor.id], self.neurons[neuron])
+                        weight_updates[tuple_neuron] = weight_updates.get(tuple_neuron, 0) + delta * xij
             else:
                 for neuron in layer.neurons_id:
                     if self.activation[current_layer] == 'sigmoid':
-                        delta = ActivationFunction.sigmoid_derivative(outmatrix[current_layer-1][neuron])
-                    xij = outmatrix[current_layer-1][neuron]
+                        delta = ActivationFunction.sigmoid_derivative(outmatrix[current_layer - 1][neuron])
+                    elif self.activation[current_layer] == 'relu':
+                        delta = ActivationFunction.relu_derivative(outmatrix[current_layer - 1][neuron])
+                    elif self.activation[current_layer] == 'tanh':
+                        delta = ActivationFunction.tanh_derivative(outmatrix[current_layer - 1][neuron])
+                    elif self.activation[current_layer] == 'linear':
+                        delta = ActivationFunction.linear_derivative(outmatrix[current_layer - 1][neuron])
+                    xij = outmatrix[current_layer - 1][neuron]
                     sum_weighted_gradient = 0
-                    for neighboor in self.neurons[neuron].neighboors:
-                        if neighboor.id in self.layers[current_layer+1].neurons_id:
-                            wij = self.weight[(self.neurons[neuron], self.neurons[neighboor.id])]
-                            sum_weighted_gradient += wij * self.gradient[(self.neurons[neuron], self.neurons[neighboor.id])]
+                    
+                    for neighbor in self.neurons[neuron].neighboors:
+                        if neighbor.id in self.layers[current_layer + 1].neurons_id:
+                            sum_weighted_gradient += self.weight[(self.neurons[neuron], self.neurons[neighbor.id])] * self.gradient[(self.neurons[neuron], self.neurons[neighbor.id])]
                     delta *= sum_weighted_gradient
-                    for neighboor in self.neurons[neuron].neighboors:
-                        if neighboor.id in self.layers[current_layer-1].neurons_id:
-                            wij = self.weight[(self.neurons[neighboor.id], self.neurons[neuron])]
-                            self.gradient[(self.neurons[neighboor.id], self.neurons[neuron])] = delta * xij
-                            self.weight[(self.neurons[neighboor.id], self.neurons[neuron])] = wij - learning_rate * self.gradient[(self.neurons[neighboor.id], self.neurons[neuron])]
+                    
+                    for neighbor in self.neurons[neuron].neighboors:
+                        if neighbor.id in self.layers[current_layer - 1].neurons_id:
+                            tuple_neuron = (self.neurons[neighbor.id], self.neurons[neuron])
+                            weight_updates[tuple_neuron] = weight_updates.get(tuple_neuron, 0) + delta * xij
+            
+            batch_counter += 1
+            if batch_counter % batch_size == 0:
+                for tuple_neuron, grad in weight_updates.items():
+                    self.__update_weight(tuple_neuron, learning_rate * grad / batch_size)
+                weight_updates.clear()
+            
+            current_layer -= 1
+
+        # Apply remaining updates if any after the last batch
+        if weight_updates:
+            for tuple_neuron, grad in weight_updates.items():
+                self.__update_weight(tuple_neuron, learning_rate * grad / batch_size)
+
 
     def fit(self, learning_rate :float, batch_size: int = 32, epochs: int = 100, verbose: bool = True):
         '''Melakukan pelatihan (forward-backward) sebanyak jumlah epochs'''
