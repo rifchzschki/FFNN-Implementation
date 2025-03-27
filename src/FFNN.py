@@ -89,10 +89,46 @@ class FFNN:
         self.N_neuron_layer: list[int] = N_neuron_layer
         self.weight: dict[tuple[Neuron, Neuron], float] = {}
         self.gradient: dict[tuple[Neuron, Neuron], float] = {}
-        self.bias: list[int] = []
+        self.bias: list[float] = []
         self.neurons: dict[int, Neuron] = {}
         self.layers: list[Layer] = []
         self.output : list[list[float]] = [] # Diisi ketika forward propagation
+    def configure(self):
+        '''konfigurasi lanjutan'''
+
+        #masukkan layer dan neuron
+        idx = 1
+        for i in range(self.N_layer):
+            new_neuronList = []
+            for j in range(self.N_neuron_layer[i]):
+                newNeuron = Neuron(idx)
+                new_neuronList.append(idx)
+                self.neurons[idx] = newNeuron
+                idx+=1
+
+            newLayer = Layer(i, new_neuronList)
+            self.layers.append(newLayer)
+
+        #sambungkan neuron dari layer satu ke layer berikutnya
+
+        for i in range(self.N_layer - 1):
+            layer_cur = self.layers[i]
+            layer_next = self.layers[i + 1]
+
+            for j in range(len(layer_cur.neurons_id)):
+                for k in range(len(layer_next.neurons_id)):
+                    self.neurons[layer_cur.neurons_id[j]].add_neighbor(self.neurons[layer_next.neurons_id[k]])
+
+        #masukkan nilai bias dimulai dari hidden layer ke-1 sampai hidden layer terakhir kecuali output layer
+        self.bias.append(0)
+
+        for i in range(1,self.N_layer-1):
+            bias_inp = float(input(f"Masukkan nilai bias pada hidden layer ke{i}"))
+            self.bias.append(bias_inp)
+
+        self.bias.append(0)
+
+
 
     def __add_neuron(self, id: int) -> Neuron:
         """Menambahkan neuron baru ke dalam graph."""
@@ -198,11 +234,13 @@ class FFNN:
         print("Loss Function yang digunakan: ", self.loss)
         print("Activation Function yang digunakan: ")
         for i in range(len(self.activation)):
-            print(f"Activation function yang digunakan layer ke-{i+2} : {self.activation[i]}")
+            print(f"Activation function yang digunakan layer ke-{i} : {self.activation[i]}")
         for i in range(len(self.N_neuron_layer)):
-            print(f"Banyak neuron pada layer ke-{i+1} : {self.N_neuron_layer[i]}")
+            print(f"Banyak neuron pada layer ke-{i} : {self.N_neuron_layer[i]}")
         for layer in self.layers:
             layer.debug()
-        for i in range (len(self.neurons)):
+        for i in range (1, len(self.neurons)+1):
             self.neurons[i].print_neighbors()
+        for i in range (1, len(self.bias)-1):
+            print(f"Bobot bias pada hidden layer ke-{i} : {self.bias[i]}")
      

@@ -24,6 +24,7 @@ for i in range(layer_count):
         raise ValueError("Banyak neuron invalid, harus input bilangan bulat > 0")
 #input urutan fungsi aktivasi dari hidden layer pertama sampai ke layer output
 activation_func_sequence = []
+activation_func_sequence.append("")
 for i in range(1,layer_count):
     outStr = "Masukkan jenis fungsi aktivasi untuk "
     if(i == layer_count - 1):
@@ -57,4 +58,7 @@ loss_input = input(outStr).lower()
 if loss_input not in valid_losses:
     raise ValueError("Loss function yang dimasukkan invalid")
 
+ffnn_run = FFNN(N_layer=layer_count, loss=loss_input, activation=activation_func_sequence, N_neuron_layer=neuron_count_per_layer)
 
+ffnn_run.configure()
+ffnn_run.debug()
