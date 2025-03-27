@@ -144,7 +144,7 @@ class FFNN:
                     
                     for neuron in layer.neurons_id:
                         xij = outmatrix[current_layer - 1][:, neuron]
-                        for neighbor in self.neurons[neuron].neighboors:
+                        for neighbor in self.neurons[neuron].neighbors:
                             tuple_neuron = (self.neurons[neighbor.id], self.neurons[neuron])
                             weight_updates[tuple_neuron] += np.sum(delta * xij, axis=0)
                         bias_updates[self.neurons[neuron]] += np.sum(delta, axis=0)
@@ -153,14 +153,14 @@ class FFNN:
                     sum_weighted_gradient = np.zeros_like(delta)
                     
                     for neuron in layer.neurons_id:
-                        for neighbor in self.neurons[neuron].neighboors:
+                        for neighbor in self.neurons[neuron].neighbors:
                             if neighbor.id in self.layers[current_layer + 1].neurons_id:
                                 sum_weighted_gradient[:, neuron] += self.weight[(self.neurons[neuron], self.neurons[neighbor.id])] * delta[:, neighbor]
                         delta[:, neuron] *= sum_weighted_gradient[:, neuron]
                     
                     for neuron in layer.neurons_id:
                         xij = outmatrix[current_layer - 1][:, neuron]
-                        for neighbor in self.neurons[neuron].neighboors:
+                        for neighbor in self.neurons[neuron].neighbors:
                             if neighbor.id in self.layers[current_layer - 1].neurons_id:
                                 tuple_neuron = (self.neurons[neighbor.id], self.neurons[neuron])
                                 weight_updates[tuple_neuron] += np.sum(delta * xij, axis=0)
@@ -179,7 +179,7 @@ class FFNN:
             self.backprop(X, y, learning_rate, batch_size)
             print(f"Epoch {epoch + 1}/{epochs} selesai")
 
-    def predict():
+    def predict(self):
         '''Melakukan prediksi dari hasil pelatihan model'''
         pass
     
