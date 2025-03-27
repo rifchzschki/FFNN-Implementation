@@ -1,5 +1,7 @@
 import numpy as np
 import pickle
+import networkx as nx
+import matplotlib.pyplot as plt
 class ActivationFunction:
     @staticmethod
     def linear(x: np.ndarray) -> np.ndarray:
@@ -144,23 +146,23 @@ class FFNN:
                     
                     for neuron in layer.neurons_id:
                         xij = outmatrix[current_layer - 1][:, neuron]
-                        for neighbor in self.neurons[neuron].neighboors:
+                        for neighbor in self.neurons[neuron].neighbors:
                             tuple_neuron = (self.neurons[neighbor.id], self.neurons[neuron])
                             weight_updates[tuple_neuron] += np.sum(delta * xij, axis=0)
                         bias_updates[self.neurons[neuron]] += np.sum(delta, axis=0)
-                else:
+                elif current_layer > 0:
                     delta = ActivationFunction.sigmoid_derivative(outmatrix[current_layer - 1])
                     sum_weighted_gradient = np.zeros_like(delta)
                     
                     for neuron in layer.neurons_id:
-                        for neighbor in self.neurons[neuron].neighboors:
+                        for neighbor in self.neurons[neuron].neighbors:
                             if neighbor.id in self.layers[current_layer + 1].neurons_id:
                                 sum_weighted_gradient[:, neuron] += self.weight[(self.neurons[neuron], self.neurons[neighbor.id])] * delta[:, neighbor]
                         delta[:, neuron] *= sum_weighted_gradient[:, neuron]
                     
                     for neuron in layer.neurons_id:
                         xij = outmatrix[current_layer - 1][:, neuron]
-                        for neighbor in self.neurons[neuron].neighboors:
+                        for neighbor in self.neurons[neuron].neighbors:
                             if neighbor.id in self.layers[current_layer - 1].neurons_id:
                                 tuple_neuron = (self.neurons[neighbor.id], self.neurons[neuron])
                                 weight_updates[tuple_neuron] += np.sum(delta * xij, axis=0)
@@ -205,4 +207,88 @@ class FFNN:
             layer.debug()
         for i in range (len(self.neurons)):
             self.neurons[i].print_neighbors()
-     
+    def visualize_network(self):
+        
+        G = nx.DiGraph()
+        
+        for layer_id, layer in enumerate(self.layers):
+            for neuron_id in layer.neurons_id:
+                G.add_node(neuron_id, layer=layer_id)
+        
+        for (neuron1, neuron2), weight in self.weight.items():
+            gradient = self.gradient.get((neuron1, neuron2), 0)
+            G.add_edge(neuron1.id, neuron2.id, weight=weight, gradient=gradient)
+        
+        pos = nx.multipartite_layout(G, subset_key="layer")
+        plt.figure(figsize=(12, 8))
+        nx.draw_networkx_nodes(G, pos, node_size=500, node_color='skyblue')
+        
+        edge_labels = {(u, v): f"w:{d['weight']:.2f}\ng:{d['gradient']:.2f}" 
+                      for u, v, d in G.edges(data=True)}
+        nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20)
+        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
+        
+        nx.draw_networkx_labels(G, pos, font_size=12)
+        
+        plt.title("Struktur FFNN")
+        plt.axis('off')
+        plt.show()
+    
+    def plot_weight_distribution(self, layers_to_plot: list[int]):
+
+        plt.figure(figsize=(12, 6))
+        
+        for layer_idx in layers_to_plot:
+            if layer_idx < 0 or layer_idx >= len(self.layers) - 1:
+                continue
+                
+            weights = []
+            current_layer = self.layers[layer_idx]
+            next_layer = self.layers[layer_idx + 1]
+            for neuron1_id in current_layer.neurons_id:
+                for neuron2_id in next_layer.neurons_id:
+                    neuron1 = self.neurons[neuron1_id]
+                    neuron2 = self.neurons[neuron2_id]
+                    if (neuron1, neuron2) in self.weight:
+                        weights.append(self.weight[(neuron1, neuron2)])
+            
+            if weights:
+                plt.hist(weights, bins=30, alpha=0.5, 
+                         label=f'Layer {layer_idx} to {layer_idx + 1}')
+        
+        plt.xlabel('Weight Value')
+        plt.ylabel('Frequency')
+        plt.title('Weight Distribution by Layer')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+    
+    def plot_gradient_distribution(self, layers_to_plot: list[int]):
+        plt.figure(figsize=(12, 6))
+        
+        for layer_idx in layers_to_plot:
+            if layer_idx < 0 or layer_idx >= len(self.layers) - 1:
+                print(f"Warning: Layer {layer_idx} is out of range. Skipping.")
+                continue
+                
+            gradients = []
+            current_layer = self.layers[layer_idx]
+            next_layer = self.layers[layer_idx + 1]
+
+            for neuron1_id in current_layer.neurons_id:
+                for neuron2_id in next_layer.neurons_id:
+                    neuron1 = self.neurons[neuron1_id]
+                    neuron2 = self.neurons[neuron2_id]
+                    if (neuron1, neuron2) in self.gradient:
+                        gradients.append(self.gradient[(neuron1, neuron2)])
+            
+            if gradients:
+                plt.hist(gradients, bins=30, alpha=0.5, 
+                         label=f'Layer {layer_idx} to {layer_idx + 1}')
+        
+        plt.xlabel('Gradient Value')
+        plt.ylabel('Frequency')
+        plt.title('Gradient Distribution by Layer')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
