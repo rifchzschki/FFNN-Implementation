@@ -301,28 +301,97 @@ class FFNN:
         with open(filename, 'rb') as f:
             return pickle.load(f)
     
-    def visualize_network(self):
+    def visualize_network(self, show_weights=True, show_biases=True, show_gradients=True):
         G = nx.DiGraph()
+        
         for layer in self.layers:
             for neuron in layer.neurons:
                 G.add_node(neuron.id, layer=layer.id)
 
         for (from_id, to_id), weight in self.weights.items():
             G.add_edge(from_id, to_id, weight=weight)
-
         pos = nx.multipartite_layout(G, subset_key="layer")
         plt.figure(figsize=(12, 8))
+
         nx.draw_networkx_nodes(G, pos, node_size=500, node_color='skyblue')
         nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20)
         nx.draw_networkx_labels(G, pos, font_size=12)
 
-        edge_labels = {(u, v): f"{d['weight']:.2f}" 
-                      for u, v, d in G.edges(data=True) }
-        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8, label_pos=0.1)
-        for neuron_id, bias in self.biases.items():
-            plt.text(pos[neuron_id][0], pos[neuron_id][1] - 0.15, 
-                    f"b={bias:.2f}", 
-                    ha='center', fontsize=8, color='red')
+        if show_weights:
+            edge_labels = {(u, v): f"{d['weight']:.2f}" 
+                        for u, v, d in G.edges(data=True)}
+            nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, 
+                                        font_size=8, label_pos=0.1)
+
+        if show_biases or show_gradients:
+            for neuron_id, bias in self.biases.items():
+                label_parts = []
+                if show_biases:
+                    label_parts.append(f"b={bias:.2f}")
+                if show_gradients:
+                    for layer in self.layers:
+                        for neuron in layer.neurons:
+                            if neuron.id == neuron_id:
+                                label_parts.append(f"gradient={neuron.grad:.2f}")
+                                break
+                label = "\n".join(label_parts)
+                plt.text(pos[neuron_id][0], pos[neuron_id][1] - 0.15, 
+                        label, 
+                        ha='center', fontsize=8, color='red')
+
         plt.title("Neural Network Architecture")
+        plt.axis('off')
+        plt.show()
+
+    def visualize_selected_layers(self, layers_to_show, show_weights=True, show_biases=True, show_gradients=True):
+        G = nx.DiGraph()
+        for layer in self.layers:
+            if layer.id in layers_to_show:
+                for neuron in layer.neurons:
+                    G.add_node(neuron.id, layer=layer.id)
+        for (from_id, to_id), weight in self.weights.items():
+            from_layer = None
+            to_layer = None
+
+            for layer in self.layers:
+                for neuron in layer.neurons:
+                    if neuron.id == from_id:
+                        from_layer = layer.id
+                    if neuron.id == to_id:
+                        to_layer = layer.id
+            
+            if from_layer in layers_to_show and to_layer in layers_to_show:
+                G.add_edge(from_id, to_id, weight=weight)
+
+        pos = nx.multipartite_layout(G, subset_key="layer")
+        plt.figure(figsize=(12, 8))
+        
+        nx.draw_networkx_nodes(G, pos, node_size=500, node_color='skyblue')
+        nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20)
+        nx.draw_networkx_labels(G, pos, font_size=12)
+        if show_weights:
+            edge_labels = {(u, v): f"{d['weight']:.2f}" 
+                        for u, v, d in G.edges(data=True)}
+            nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, 
+                                        font_size=8, label_pos=0.1)
+
+        if show_biases or show_gradients:
+            for neuron_id, bias in self.biases.items():
+                if neuron_id in G.nodes:
+                    label_parts = []
+                    if show_biases:
+                        label_parts.append(f"b={bias:.2f}")
+                    if show_gradients:
+                        for layer in self.layers:
+                            for neuron in layer.neurons:
+                                if neuron.id == neuron_id:
+                                    label_parts.append(f"gradient={neuron.grad:.2f}")
+                                    break
+                    label = "\n".join(label_parts)
+                    plt.text(pos[neuron_id][0], pos[neuron_id][1] - 0.15, 
+                            label, 
+                            ha='center', fontsize=8, color='red')
+
+        plt.title(f"Neural Network Architecture (Layers: {sorted(layers_to_show)})")
         plt.axis('off')
         plt.show()
