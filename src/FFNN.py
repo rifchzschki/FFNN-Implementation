@@ -55,6 +55,7 @@ class Neuron:
     def __init__(self, id: int):
         self.id = id
         self.neighbors: set[Neuron] = set()
+        self.weight = 0
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Neuron):
@@ -73,6 +74,9 @@ class Neuron:
         print(f"Daftar tetangga dari Neuron dengan ID: {self.id}")
         for neuron in self.neighbors:
             print(neuron.id)
+    def set_weight(self, weight: float) -> None:
+        self.weight = weight
+
 class Layer:
     def __init__(self, id: int, neurons_id: list[int]):
         self.id: int = id
@@ -91,10 +95,68 @@ class FFNN:
         self.N_neuron_layer: list[int] = N_neuron_layer
         self.weight: dict[tuple[Neuron, Neuron], float] = {}
         self.gradient: dict[tuple[Neuron, Neuron], float] = {}
-        self.bias: list[int] = []
+        self.bias: list[float] = []
         self.neurons: dict[int, Neuron] = {}
         self.layers: list[Layer] = []
         self.output : list[list[float]] = [] # Diisi ketika forward propagation
+        self.input: list[float] = []
+        self.predicted_values: list[float] = []
+    def set_input_values(self):
+        input_layer = self.layers[0]
+        print("Masukkan nilai input pada setiap neuron di layer input")
+        for neuron_id in input_layer.neurons_id:
+            input_weight = float(input(f"Masukkan nilai input pada neuron {neuron_id}: "))
+            self.neurons[neuron_id].set_weight(input_weight)
+            self.input.append(input_weight)
+
+    def set_predicted_values(self):
+        output_layer = self.layers[self.N_layer-1]
+        print("Masukkan nilai prediksi pada setiap neuron di layer output")
+        for neuron_id in output_layer.neurons_id:
+            predicted_weight = float(input(f"Masukkan nilai prediksi pada neuron {neuron_id}: "))
+            self.predicted_values.append(predicted_weight)
+    def configure(self):
+        '''konfigurasi lanjutan'''
+
+        #masukkan layer dan neuron
+        idx = 1
+        assigned_edges = set()
+        for i in range(self.N_layer):
+            new_neuronList = []
+            for j in range(self.N_neuron_layer[i]):
+                newNeuron = Neuron(idx)
+                new_neuronList.append(idx)
+                self.neurons[idx] = newNeuron
+                idx+=1
+
+            newLayer = Layer(i, new_neuronList)
+            self.layers.append(newLayer)
+
+        #sambungkan neuron dari layer satu ke layer berikutnya
+
+        for i in range(self.N_layer - 1):
+            layer_cur = self.layers[i]
+            layer_next = self.layers[i + 1]
+
+            for j in range(len(layer_cur.neurons_id)):
+                for k in range(len(layer_next.neurons_id)):
+                    neuron1 = self.neurons[layer_cur.neurons_id[j]]
+                    neuron2 = self.neurons[layer_next.neurons_id[k]]
+                    if (neuron1.id, neuron2.id) not in assigned_edges and (neuron2.id, neuron1.id) not in assigned_edges:
+                        weight_value = float(input(f"Masukkan bobot antara neuron {neuron1.id} dan neuron {neuron2.id}: "))
+                        self.weight[(neuron1, neuron2)] = weight_value
+                        self.weight[(neuron2, neuron1)] = weight_value
+                        assigned_edges.add((neuron1.id, neuron2.id))
+                    neuron1.add_neighbor(neuron2)
+
+        #masukkan nilai bias dimulai dari hidden layer ke-1 sampai hidden layer terakhir kecuali output layer
+        self.bias.append(0)
+
+        for i in range(1,self.N_layer):
+            bias_inp = float(input(f"Masukkan nilai bias pada hidden layer ke-{i}: "))
+            self.bias.append(bias_inp)
+
+
 
     def __add_neuron(self, id: int) -> Neuron:
         """Menambahkan neuron baru ke dalam graph."""
@@ -111,7 +173,44 @@ class FFNN:
 
     def forward(self):
         '''Melakukan forward propagation untuk melihat hasil inferensi'''
-        pass
+        layer_output = []
+        for layer_idx in range(1, self.N_layer):
+            prev_layer = self.layers[layer_idx-1]
+            curr_layer = self.layers[layer_idx]
+
+            for curr_neuron_id in curr_layer.neurons_id:
+                unactivated_weight = 0
+
+                curr_neuron = self.neurons[curr_neuron_id]
+                for prev_neuron_id in prev_layer.neurons_id:
+                    prev_neuron = self.neurons[prev_neuron_id]
+                    unactivated_weight += (prev_neuron.weight * self.weight[(prev_neuron, curr_neuron)])
+
+                unactivated_weight += self.bias[layer_idx]
+
+                # print(f"Unactivated weight neuron ke-{curr_neuron_id}: {unactivated_weight}")
+                activated_weight = 0
+                activation_func = self.activation[layer_idx]
+                if activation_func == 'linear':
+                    activated_weight = ActivationFunction.linear(unactivated_weight)
+                elif activation_func == 'relu':
+                    activated_weight = ActivationFunction.relu(unactivated_weight)
+                elif activation_func == 'sigmoid':
+                    activated_weight = ActivationFunction.sigmoid(unactivated_weight)
+                elif activation_func == 'tanh':
+                    activated_weight = ActivationFunction.tanh(unactivated_weight)
+                elif activation_func == 'softmax':
+                    activated_weight = ActivationFunction.softmax(unactivated_weight)
+                else:
+                    raise ValueError("Fungsi aktivasi tidak valid!")
+                # print(f"Activated weight neuron ke-{curr_neuron_id}: {activated_weight}")
+                curr_neuron.set_weight(float(activated_weight))
+                layer_output.append(float(activated_weight))
+
+        self.output.append(layer_output)
+
+
+
 
     def __update_weight(self, tuple_neuron: tuple[Neuron, Neuron], weight_update: float) -> None:
         '''Melakukan perhitungan update bobot'''
@@ -181,7 +280,7 @@ class FFNN:
             self.backprop(X, y, learning_rate, batch_size)
             print(f"Epoch {epoch + 1}/{epochs} selesai")
 
-    def predict():
+    def predict(self):
         '''Melakukan prediksi dari hasil pelatihan model'''
         pass
     
@@ -200,13 +299,39 @@ class FFNN:
         print("Loss Function yang digunakan: ", self.loss)
         print("Activation Function yang digunakan: ")
         for i in range(len(self.activation)):
-            print(f"Activation function yang digunakan layer ke-{i+2} : {self.activation[i]}")
+            print(f"Activation function yang digunakan layer ke-{i} : {self.activation[i]}")
         for i in range(len(self.N_neuron_layer)):
-            print(f"Banyak neuron pada layer ke-{i+1} : {self.N_neuron_layer[i]}")
+            print(f"Banyak neuron pada layer ke-{i} : {self.N_neuron_layer[i]}")
         for layer in self.layers:
             layer.debug()
-        for i in range (len(self.neurons)):
+        for i in range (1, len(self.neurons)+1):
             self.neurons[i].print_neighbors()
+        for i in range (1, len(self.bias)):
+            print(f"Bobot bias pada hidden layer ke-{i} : {self.bias[i]}")
+        print("\n=== Bobot antar Neuron ===")
+        for (neuron1, neuron2), weight in self.weight.items():
+            print(f"Neuron {neuron1.id} ↔ Neuron {neuron2.id} : {weight}")
+
+        print("\n=== Bobot input ===")
+        input_layer = self.layers[0]
+
+        for neuron_id in input_layer.neurons_id:
+            neuron = self.neurons[neuron_id]
+            print(f"Neuron {neuron.id} : {neuron.weight}")
+
+        print("\n=== Bobot Setiap Neuron ===")
+        for layer_idx, layer in enumerate(self.layers):
+            print(f"\nLayer ke-{layer_idx}:")
+            for neuron_id in layer.neurons_id:
+                neuron = self.neurons[neuron_id]
+                print(f"Neuron {neuron.id} : {neuron.weight}")
+        print("\n=== Bobot prediksi ===")
+        output_layer = self.layers[self.N_layer-1]
+        idx = 0
+        for neuron_id in output_layer.neurons_id:
+            neuron = self.neurons[neuron_id]
+            print(f"Neuron {neuron.id} : {neuron.weight}, nilai prediksi: {self.predicted_values[idx]}")
+            idx+=1
     def visualize_network(self):
         
         G = nx.DiGraph()
