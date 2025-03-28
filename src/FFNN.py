@@ -2,6 +2,7 @@ import numpy as np
 import pickle
 import networkx as nx
 import matplotlib.pyplot as plt
+np.random.seed(42)
 class ActivationFunction:
     @staticmethod
     def linear(x: np.ndarray) -> np.ndarray:
@@ -40,7 +41,7 @@ class ActivationFunction:
     def softmax(x: np.ndarray) -> np.ndarray:
         exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
         return exp_x / np.sum(exp_x, axis=1, keepdims=True)
-    
+
 class LossFunction:
     @staticmethod
     def mse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -48,15 +49,26 @@ class LossFunction:
     
     @staticmethod
     def mse_derivative(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
-        return -2 * (y_true - y_pred)/y_true.shape[0]
+        return 2 * (y_pred - y_true) / y_true.size
     
+    @staticmethod
+    def cross_entropy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        epsilon = 1e-15
+        y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
+        return -np.mean(y_true * np.log(y_pred))
+    
+    @staticmethod
+    def cross_entropy_derivative(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+        epsilon = 1e-15
+        y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
+        return (y_pred - y_true) / (y_pred * (1 - y_pred))
 
 class Neuron:
     def __init__(self, id: int):
         self.id = id
-        self.neighbors: set[Neuron] = set()
-        self.weight = 0
-
+        self.output: float = 0.0
+        self.grad: float = 0.0
+        
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Neuron):
             return False
@@ -65,355 +77,252 @@ class Neuron:
     def __hash__(self) -> int:
         return hash(self.id)
     
-    def add_neighbor(self, neuron: "Neuron") -> None:
-        """Menambahkan neuron sebagai tetangga."""
-        self.neighbors.add(neuron)
-        neuron.neighbors.add(self)
-
-    def print_neighbors(self):
-        print(f"Daftar tetangga dari Neuron dengan ID: {self.id}")
-        for neuron in self.neighbors:
-            print(neuron.id)
-    def set_weight(self, weight: float) -> None:
-        self.weight = weight
+    def set_output(self, value: float) -> None:
+        self.output = value
+        
+    def get_output(self) -> float:
+        return self.output
 
 class Layer:
-    def __init__(self, id: int, neurons_id: list[int]):
+    def __init__(self, id: int, neurons: list[Neuron], activation: str):
         self.id: int = id
-        self.neurons_id: list[int] = neurons_id
-
-    def debug(self):
-        print(f"Layer ke-{self.id}")
-        for i in range (len(self.neurons_id)):
-            print(f"Neuron ID pada Layer ke-{self.id} : {self.neurons_id[i]}")
+        self.neurons: list[Neuron] = neurons
+        self.activation: str = activation
+        self.outputs: np.ndarray = np.array([])
+        
+    def activate(self, x: np.ndarray) -> np.ndarray:
+        if self.activation == 'linear':
+            return ActivationFunction.linear(x)
+        elif self.activation == 'relu':
+            return ActivationFunction.relu(x)
+        elif self.activation == 'sigmoid':
+            return ActivationFunction.sigmoid(x)
+        elif self.activation == 'tanh':
+            return ActivationFunction.tanh(x)
+        elif self.activation == 'softmax':
+            return ActivationFunction.softmax(x)
+        else:
+            raise ValueError(f"Unknown activation function: {self.activation}")
 
 class FFNN:
-    def __init__(self, N_layer: int, loss:str, activation:list[str], N_neuron_layer: list[int]) -> None:
-        self.N_layer: int = N_layer
-        self.loss: str = loss
-        self.activation: list[str] = activation
-        self.N_neuron_layer: list[int] = N_neuron_layer
-        self.weight: dict[tuple[Neuron, Neuron], float] = {}
-        self.gradient: dict[tuple[Neuron, Neuron], float] = {}
-        self.bias: list[float] = []
+    def __init__(self, N_layer: int, loss: str, activation: list[str], N_neuron_layer: list[int], weight_method: str = 'normal'):
+        self.N_layer = N_layer
+        self.loss = loss
+        self.activation = activation
+        self.N_neuron_layer = N_neuron_layer
+        self.weight_method = weight_method
         self.neurons: dict[int, Neuron] = {}
         self.layers: list[Layer] = []
-        self.output : list[list[float]] = [] # Diisi ketika forward propagation
-        self.input: list[float] = []
-        self.predicted_values: list[float] = []
-    def set_input_values(self):
-        input_layer = self.layers[0]
-        print("Masukkan nilai input pada setiap neuron di layer input")
-        for neuron_id in input_layer.neurons_id:
-            input_weight = float(input(f"Masukkan nilai input pada neuron {neuron_id}: "))
-            self.neurons[neuron_id].set_weight(input_weight)
-            self.input.append(input_weight)
-
-    def set_predicted_values(self):
-        output_layer = self.layers[self.N_layer-1]
-        print("Masukkan nilai prediksi pada setiap neuron di layer output")
-        for neuron_id in output_layer.neurons_id:
-            predicted_weight = float(input(f"Masukkan nilai prediksi pada neuron {neuron_id}: "))
-            self.predicted_values.append(predicted_weight)
-    def configure(self):
-        '''konfigurasi lanjutan'''
-
-        #masukkan layer dan neuron
-        idx = 1
-        assigned_edges = set()
-        for i in range(self.N_layer):
-            new_neuronList = []
-            for j in range(self.N_neuron_layer[i]):
-                newNeuron = Neuron(idx)
-                new_neuronList.append(idx)
-                self.neurons[idx] = newNeuron
-                idx+=1
-
-            newLayer = Layer(i, new_neuronList)
-            self.layers.append(newLayer)
-
-        #sambungkan neuron dari layer satu ke layer berikutnya
+        self.weights: dict[tuple[int, int], float] = {}  # (from_neuron_id, to_neuron_id) -> weight
+        self.biases: dict[int, float] = {}
+        
+        self._initialize_network(self.weight_method)
+    def initialize_weights(self, method: str = 'normal', scale: float = 1.0) -> None:
 
         for i in range(self.N_layer - 1):
-            layer_cur = self.layers[i]
-            layer_next = self.layers[i + 1]
+            current_layer = self.layers[i]
+            next_layer = self.layers[i + 1]
+            
+            
+            for neuron1 in current_layer.neurons:
+                for neuron2 in next_layer.neurons:
+                    
+                    if method == 'zero':
+                        weight = 0.0
+                    elif method == 'uniform':
+                        weight = np.random.uniform(-scale, scale)
+                    elif method == 'normal':
+                        weight = np.random.normal(0, scale)
+                    else:
+                        raise ValueError(f"Unknown initialization method: {method}")
+                    
+                    self.weights[(neuron1.id, neuron2.id)] = weight
+                    # self.weights[(neuron2.id, neuron1.id)] = weight
 
-            for j in range(len(layer_cur.neurons_id)):
-                for k in range(len(layer_next.neurons_id)):
-                    neuron1 = self.neurons[layer_cur.neurons_id[j]]
-                    neuron2 = self.neurons[layer_next.neurons_id[k]]
-                    if (neuron1.id, neuron2.id) not in assigned_edges and (neuron2.id, neuron1.id) not in assigned_edges:
-                        weight_value = float(input(f"Masukkan bobot antara neuron {neuron1.id} dan neuron {neuron2.id}: "))
-                        self.weight[(neuron1, neuron2)] = weight_value
-                        self.weight[(neuron2, neuron1)] = weight_value
-                        assigned_edges.add((neuron1.id, neuron2.id))
-                    neuron1.add_neighbor(neuron2)
+        # Initialize biases
+        self.biases: dict[int, float] = {}
+        for i in range(1, self.N_layer):
+            for neuron in self.layers[i].neurons:
+                if method == 'zero':
+                    self.biases[neuron.id] = 0.0
+                elif method == 'uniform':
+                    self.biases[neuron.id] = np.random.uniform(-scale, scale)
+                elif method == 'normal':
+                    self.biases[neuron.id] = np.random.normal(0, scale)
 
-        #masukkan nilai bias dimulai dari hidden layer ke-1 sampai hidden layer terakhir kecuali output layer
-        self.bias.append(0)
-
-        for i in range(1,self.N_layer):
-            bias_inp = float(input(f"Masukkan nilai bias pada hidden layer ke-{i}: "))
-            self.bias.append(bias_inp)
-
-
-
-    def __add_neuron(self, id: int) -> Neuron:
-        """Menambahkan neuron baru ke dalam graph."""
-        if id not in self.neurons:
-            self.neurons[id] = Neuron(id)
-        return self.neurons[id]
-
-    def add_edge(self, id1: int, id2: int, weight: float) -> None:
-        """Menambahkan hubungan antara dua neuron."""
-        neuron1 = self.__add_neuron(id1)
-        neuron2 = self.__add_neuron(id2)
-        self.weight[tuple[neuron1,neuron2]] = weight
-        neuron1.add_neighbor(neuron2)
-
-    def forward(self):
-        '''Melakukan forward propagation untuk melihat hasil inferensi'''
-        layer_output = []
+    def _initialize_network(self, weight_method: str):
+        """Initialize the network structure"""
+        neuron_id = 1
+        
+        # Create layers and neurons
+        for layer_idx in range(self.N_layer):
+            neurons_in_layer = []
+            for _ in range(self.N_neuron_layer[layer_idx]):
+                neuron = Neuron(neuron_id)
+                self.neurons[neuron_id] = neuron
+                neurons_in_layer.append(neuron)
+                neuron_id += 1
+            
+            activation = self.activation[layer_idx] if layer_idx < len(self.activation) else 'linear'
+            self.layers.append(Layer(layer_idx, neurons_in_layer, activation))
+        
+        # # Initialize weights (only forward connections)
+        # for layer_idx in range(self.N_layer - 1):
+        #     current_layer = self.layers[layer_idx]
+        #     next_layer = self.layers[layer_idx + 1]
+            
+        #     for current_neuron in current_layer.neurons:
+        #         for next_neuron in next_layer.neurons:
+        #             # Initialize with random small weights
+        #             self.weights[(current_neuron.id, next_neuron.id)] = np.random.randn() * 0.1
+        
+        # # Initialize biases (except input layer)
+        # for layer_idx in range(1, self.N_layer):
+        #     self.biases[layer_idx] = np.random.randn() * 0.1
+        
+        self.initialize_weights(method=weight_method)  # Initialize weights using He initialization
+    
+    def forward(self, X: np.ndarray) -> np.ndarray:
+        """Forward pass for a batch of samples"""
+        if X.shape[1] != self.N_neuron_layer[0]:
+            raise ValueError("Input size doesn't match network input layer size")
+        
+        for i, neuron in enumerate(self.layers[0].neurons):
+            neuron.output = X[:, i]
+        
         for layer_idx in range(1, self.N_layer):
-            prev_layer = self.layers[layer_idx-1]
-            curr_layer = self.layers[layer_idx]
+            prev_layer = self.layers[layer_idx - 1]
+            current_layer = self.layers[layer_idx]
+            
+            prev_outputs = np.array([neuron.output for neuron in prev_layer.neurons]).T
+            
+            weighted_sum = np.zeros((X.shape[0], len(current_layer.neurons)))
+            for i, current_neuron in enumerate(current_layer.neurons):
+                for j, prev_neuron in enumerate(prev_layer.neurons):
+                    weight = self.weights.get((prev_neuron.id, current_neuron.id), 0.0)
+                    weighted_sum[:, i] += prev_outputs[:, j] * weight
+                    weighted_sum[:, i] += self.biases[current_neuron.id] 
 
-            for curr_neuron_id in curr_layer.neurons_id:
-                unactivated_weight = 0
-
-                curr_neuron = self.neurons[curr_neuron_id]
-                for prev_neuron_id in prev_layer.neurons_id:
-                    prev_neuron = self.neurons[prev_neuron_id]
-                    unactivated_weight += (prev_neuron.weight * self.weight[(prev_neuron, curr_neuron)])
-
-                unactivated_weight += self.bias[layer_idx]
-
-                # print(f"Unactivated weight neuron ke-{curr_neuron_id}: {unactivated_weight}")
-                activated_weight = 0
-                activation_func = self.activation[layer_idx]
-                if activation_func == 'linear':
-                    activated_weight = ActivationFunction.linear(unactivated_weight)
-                elif activation_func == 'relu':
-                    activated_weight = ActivationFunction.relu(unactivated_weight)
-                elif activation_func == 'sigmoid':
-                    activated_weight = ActivationFunction.sigmoid(unactivated_weight)
-                elif activation_func == 'tanh':
-                    activated_weight = ActivationFunction.tanh(unactivated_weight)
-                elif activation_func == 'softmax':
-                    activated_weight = ActivationFunction.softmax(unactivated_weight)
-                else:
-                    raise ValueError("Fungsi aktivasi tidak valid!")
-                # print(f"Activated weight neuron ke-{curr_neuron_id}: {activated_weight}")
-                curr_neuron.set_weight(float(activated_weight))
-                layer_output.append(float(activated_weight))
-
-        self.output.append(layer_output)
-
-
-
-
-    def __update_weight(self, tuple_neuron: tuple[Neuron, Neuron], weight_update: float) -> None:
-        '''Melakukan perhitungan update bobot'''
-        self.weight[tuple_neuron] -= weight_update
+            activated = current_layer.activate(weighted_sum)
+            for i, neuron in enumerate(current_layer.neurons):
+                neuron.output = activated[:, i]
+            current_layer.outputs = activated
+        
+        return self.layers[-1].outputs
     
-    def backprop(self, X: np.ndarray, y: np.ndarray, learning_rate: float, batch_size: int = 32):
-        '''Melakukan update bobot dan bias setiap batch size tercapai dengan operasi matriks'''
-        num_samples = X.shape[0]
-        for batch_start in range(0, num_samples, batch_size):
-            batch_end = min(batch_start + batch_size, num_samples)
-            X_batch = X[batch_start:batch_end]
-            y_batch = y[batch_start:batch_end]
-            
-            y_pred = self.forward(X_batch)
-            
-            if self.loss == 'mse':
-                loss_derivative = LossFunction.mse_derivative(y_batch, y_pred)
-            else:
-                raise ValueError(f"Loss function {self.loss} is not supported")
-            
-            weight_updates = {key: np.zeros_like(value) for key, value in self.weight.items()}
-            bias_updates = {key: np.zeros_like(value) for key, value in self.bias.items()}
-            
-            current_layer = self.N_layer - 1
-            outmatrix = np.array(self.output)
-            
-            for layer in reversed(self.layers):
-                if current_layer == self.N_layer - 1:
-                    delta = loss_derivative
-                    if self.activation[current_layer] == 'sigmoid':
-                        delta *= ActivationFunction.sigmoid_derivative(y_pred)
-                    
-                    for neuron in layer.neurons_id:
-                        xij = outmatrix[current_layer - 1][:, neuron]
-                        for neighbor in self.neurons[neuron].neighbors:
-                            tuple_neuron = (self.neurons[neighbor.id], self.neurons[neuron])
-                            weight_updates[tuple_neuron] += np.sum(delta * xij, axis=0)
-                        bias_updates[self.neurons[neuron]] += np.sum(delta, axis=0)
-                elif current_layer > 0:
-                    delta = ActivationFunction.sigmoid_derivative(outmatrix[current_layer - 1])
-                    sum_weighted_gradient = np.zeros_like(delta)
-                    
-                    for neuron in layer.neurons_id:
-                        for neighbor in self.neurons[neuron].neighbors:
-                            if neighbor.id in self.layers[current_layer + 1].neurons_id:
-                                sum_weighted_gradient[:, neuron] += self.weight[(self.neurons[neuron], self.neurons[neighbor.id])] * delta[:, neighbor]
-                        delta[:, neuron] *= sum_weighted_gradient[:, neuron]
-                    
-                    for neuron in layer.neurons_id:
-                        xij = outmatrix[current_layer - 1][:, neuron]
-                        for neighbor in self.neurons[neuron].neighbors:
-                            if neighbor.id in self.layers[current_layer - 1].neurons_id:
-                                tuple_neuron = (self.neurons[neighbor.id], self.neurons[neuron])
-                                weight_updates[tuple_neuron] += np.sum(delta * xij, axis=0)
-                        bias_updates[self.neurons[neuron]] += np.sum(delta, axis=0)
-                
-                current_layer -= 1
-            
-            for tuple_neuron, grad in weight_updates.items():
-                self.__update_weight(tuple_neuron, learning_rate * grad / batch_size)
-            for neuron, grad in bias_updates.items():
-                self.__update_bias(neuron, learning_rate * grad / batch_size)
+    def backward(self, X: np.ndarray, y: np.ndarray, learning_rate: float) -> None:
+        y_pred = self.forward(X)
 
-    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int, learning_rate: float, batch_size: int = 32):
-        '''Melatih jaringan saraf dengan dataset dalam beberapa epoch'''
-        for epoch in range(epochs):
-            self.backprop(X, y, learning_rate, batch_size)
-            print(f"Epoch {epoch + 1}/{epochs} selesai")
+        if self.loss == 'mse':
+            d_loss = LossFunction.mse_derivative(y, y_pred)
+        elif self.loss == 'cross_entropy':
+            d_loss = LossFunction.cross_entropy_derivative(y, y_pred)
+        else:
+            raise ValueError("Only MSE loss is implemented in this version")
+        
+        deltas = [np.zeros_like(layer.outputs) for layer in self.layers]
+        
+        output_layer = self.layers[-1]
+        if output_layer.activation == 'softmax':
+            deltas[-1] = y_pred - y
+        else:
+            activation_derivative = self._get_activation_derivative(output_layer.activation, output_layer.outputs)
+            deltas[-1] = d_loss * activation_derivative
+        
+        for layer_idx in range(self.N_layer - 2, 0, -1):
+            current_layer = self.layers[layer_idx]
+            next_layer = self.layers[layer_idx + 1]
 
-    def predict(self):
-        '''Melakukan prediksi dari hasil pelatihan model'''
-        pass
+            activation_derivative = self._get_activation_derivative(current_layer.activation, current_layer.outputs)
+
+            error = np.zeros_like(current_layer.outputs)
+
+            for i, current_neuron in enumerate(current_layer.neurons):
+                for j, next_neuron in enumerate(next_layer.neurons):
+                    weight = self.weights.get((current_neuron.id, next_neuron.id), 0.0)
+                    error[:, i] += deltas[layer_idx + 1][:, j] * weight
+            
+            deltas[layer_idx] = error * activation_derivative
+        
+        for layer_idx in range(self.N_layer - 1):
+            current_layer = self.layers[layer_idx]
+            next_layer = self.layers[layer_idx + 1]
+            
+            current_outputs = np.array([neuron.output for neuron in current_layer.neurons]).T
+            
+            for i, current_neuron in enumerate(current_layer.neurons):
+                for j, next_neuron in enumerate(next_layer.neurons):
+                    grad = np.mean(current_outputs[:, i] * deltas[layer_idx + 1][:, j])
+                    self.weights[(current_neuron.id, next_neuron.id)] -= learning_rate * grad
+                    self.biases[next_neuron.id] -= learning_rate * grad
+                    next_neuron.grad = grad
+                    
     
-    def load(self, nama_file: str):
-        '''Mengambil data yang sudah disimpan sebelumnya'''
-        with open(nama_file, 'rb') as f:
+    def _get_activation_derivative(self, activation: str, x: np.ndarray) -> np.ndarray:
+        if activation == 'linear':
+            return ActivationFunction.linear_derivative(x)
+        elif activation == 'relu':
+            return ActivationFunction.relu_derivative(x)
+        elif activation == 'sigmoid':
+            return ActivationFunction.sigmoid_derivative(x)
+        elif activation == 'tanh':
+            return ActivationFunction.tanh_derivative(x)
+        elif activation == 'softmax':
+            return np.ones_like(x)
+        else:
+            raise ValueError(f"Unknown activation function: {activation}")
+    
+    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int, learning_rate: float, batch_size: int = 32, verbose:bool = True) -> None:
+        for epoch in range(1,epochs+1):
+            for i in range(0, X.shape[0], batch_size):
+                X_batch = X[i:i + batch_size]
+                y_batch = y[i:i + batch_size]
+                self.backward(X_batch, y_batch, learning_rate)
+            
+            if verbose and epoch % 10 == 0:
+                y_pred = self.forward(X)
+                if self.loss == 'mse':
+                    loss = LossFunction.mse(y, y_pred)
+                elif self.loss == 'cross_entropy':
+                    loss = LossFunction.cross_entropy(y, y_pred)
+                print(f"Epoch {epoch}, Loss: {loss:.4f}")
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        return self.forward(X)
+    
+    def save(self, filename: str) -> None:
+        """Save the model to a file"""
+        with open(filename, 'wb') as f:
+            pickle.dump(self, f)
+    
+    @staticmethod
+    def load(filename: str) -> 'FFNN':
+        """Load a model from a file"""
+        with open(filename, 'rb') as f:
             return pickle.load(f)
     
-    def save(self, nama_file: str):
-        '''Melakukan prediksi dari hasil pelatihan model'''
-        with open(nama_file, 'wb') as f:
-            pickle.dump(self, f)
-
-    def debug(self):
-        print("Banyak Layer: ", self.N_layer)
-        print("Loss Function yang digunakan: ", self.loss)
-        print("Activation Function yang digunakan: ")
-        for i in range(len(self.activation)):
-            print(f"Activation function yang digunakan layer ke-{i} : {self.activation[i]}")
-        for i in range(len(self.N_neuron_layer)):
-            print(f"Banyak neuron pada layer ke-{i} : {self.N_neuron_layer[i]}")
-        for layer in self.layers:
-            layer.debug()
-        for i in range (1, len(self.neurons)+1):
-            self.neurons[i].print_neighbors()
-        for i in range (1, len(self.bias)):
-            print(f"Bobot bias pada hidden layer ke-{i} : {self.bias[i]}")
-        print("\n=== Bobot antar Neuron ===")
-        for (neuron1, neuron2), weight in self.weight.items():
-            print(f"Neuron {neuron1.id} ↔ Neuron {neuron2.id} : {weight}")
-
-        print("\n=== Bobot input ===")
-        input_layer = self.layers[0]
-
-        for neuron_id in input_layer.neurons_id:
-            neuron = self.neurons[neuron_id]
-            print(f"Neuron {neuron.id} : {neuron.weight}")
-
-        print("\n=== Bobot Setiap Neuron ===")
-        for layer_idx, layer in enumerate(self.layers):
-            print(f"\nLayer ke-{layer_idx}:")
-            for neuron_id in layer.neurons_id:
-                neuron = self.neurons[neuron_id]
-                print(f"Neuron {neuron.id} : {neuron.weight}")
-        print("\n=== Bobot prediksi ===")
-        output_layer = self.layers[self.N_layer-1]
-        idx = 0
-        for neuron_id in output_layer.neurons_id:
-            neuron = self.neurons[neuron_id]
-            print(f"Neuron {neuron.id} : {neuron.weight}, nilai prediksi: {self.predicted_values[idx]}")
-            idx+=1
     def visualize_network(self):
-        
         G = nx.DiGraph()
-        
-        for layer_id, layer in enumerate(self.layers):
-            for neuron_id in layer.neurons_id:
-                G.add_node(neuron_id, layer=layer_id)
-        
-        for (neuron1, neuron2), weight in self.weight.items():
-            gradient = self.gradient.get((neuron1, neuron2), 0)
-            G.add_edge(neuron1.id, neuron2.id, weight=weight, gradient=gradient)
-        
+        for layer in self.layers:
+            for neuron in layer.neurons:
+                G.add_node(neuron.id, layer=layer.id)
+
+        for (from_id, to_id), weight in self.weights.items():
+            G.add_edge(from_id, to_id, weight=weight)
+
         pos = nx.multipartite_layout(G, subset_key="layer")
         plt.figure(figsize=(12, 8))
         nx.draw_networkx_nodes(G, pos, node_size=500, node_color='skyblue')
-        
-        edge_labels = {(u, v): f"w:{d['weight']:.2f}\ng:{d['gradient']:.2f}" 
-                      for u, v, d in G.edges(data=True)}
         nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20)
-        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
-        
         nx.draw_networkx_labels(G, pos, font_size=12)
-        
-        plt.title("Struktur FFNN")
+
+        edge_labels = {(u, v): f"{d['weight']:.2f}" 
+                      for u, v, d in G.edges(data=True) }
+        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8, label_pos=0.1)
+        for neuron_id, bias in self.biases.items():
+            plt.text(pos[neuron_id][0], pos[neuron_id][1] - 0.15, 
+                    f"b={bias:.2f}", 
+                    ha='center', fontsize=8, color='red')
+        plt.title("Neural Network Architecture")
         plt.axis('off')
-        plt.show()
-    
-    def plot_weight_distribution(self, layers_to_plot: list[int]):
-
-        plt.figure(figsize=(12, 6))
-        
-        for layer_idx in layers_to_plot:
-            if layer_idx < 0 or layer_idx >= len(self.layers) - 1:
-                continue
-                
-            weights = []
-            current_layer = self.layers[layer_idx]
-            next_layer = self.layers[layer_idx + 1]
-            for neuron1_id in current_layer.neurons_id:
-                for neuron2_id in next_layer.neurons_id:
-                    neuron1 = self.neurons[neuron1_id]
-                    neuron2 = self.neurons[neuron2_id]
-                    if (neuron1, neuron2) in self.weight:
-                        weights.append(self.weight[(neuron1, neuron2)])
-            
-            if weights:
-                plt.hist(weights, bins=30, alpha=0.5, 
-                         label=f'Layer {layer_idx} to {layer_idx + 1}')
-        
-        plt.xlabel('Weight Value')
-        plt.ylabel('Frequency')
-        plt.title('Weight Distribution by Layer')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
-    
-    def plot_gradient_distribution(self, layers_to_plot: list[int]):
-        plt.figure(figsize=(12, 6))
-        
-        for layer_idx in layers_to_plot:
-            if layer_idx < 0 or layer_idx >= len(self.layers) - 1:
-                print(f"Warning: Layer {layer_idx} is out of range. Skipping.")
-                continue
-                
-            gradients = []
-            current_layer = self.layers[layer_idx]
-            next_layer = self.layers[layer_idx + 1]
-
-            for neuron1_id in current_layer.neurons_id:
-                for neuron2_id in next_layer.neurons_id:
-                    neuron1 = self.neurons[neuron1_id]
-                    neuron2 = self.neurons[neuron2_id]
-                    if (neuron1, neuron2) in self.gradient:
-                        gradients.append(self.gradient[(neuron1, neuron2)])
-            
-            if gradients:
-                plt.hist(gradients, bins=30, alpha=0.5, 
-                         label=f'Layer {layer_idx} to {layer_idx + 1}')
-        
-        plt.xlabel('Gradient Value')
-        plt.ylabel('Frequency')
-        plt.title('Gradient Distribution by Layer')
-        plt.legend()
-        plt.grid(True)
         plt.show()
