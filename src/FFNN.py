@@ -2,6 +2,7 @@ import numpy as np
 import pickle
 import networkx as nx
 import matplotlib.pyplot as plt
+from tqdm import tqdm 
 np.random.seed(42)
 class ActivationFunction:
     @staticmethod
@@ -186,30 +187,24 @@ class FFNN:
         """Forward pass for a batch of samples"""
         if X.shape[1] != self.N_neuron_layer[0]:
             raise ValueError("Input size doesn't match network input layer size")
-        
-        for i, neuron in enumerate(self.layers[0].neurons):
-            neuron.output = X[:, i]
+        self.layers[0].outputs = X  
         
         for layer_idx in range(1, self.N_layer):
             prev_layer = self.layers[layer_idx - 1]
             current_layer = self.layers[layer_idx]
-            
-            prev_outputs = np.array([neuron.output for neuron in prev_layer.neurons]).T
-            
-            weighted_sum = np.zeros((X.shape[0], len(current_layer.neurons)))
-            for i, current_neuron in enumerate(current_layer.neurons):
-                for j, prev_neuron in enumerate(prev_layer.neurons):
-                    weight = self.weights.get((prev_neuron.id, current_neuron.id), 0.0)
-                    weighted_sum[:, i] += prev_outputs[:, j] * weight
-                weighted_sum[:, i] += self.biases[current_neuron.id] 
-
+            prev_outputs = prev_layer.outputs
+            weight_matrix = np.array([
+                [self.weights.get((prev_neuron.id, current_neuron.id), 0.0) for current_neuron in current_layer.neurons]
+                for prev_neuron in prev_layer.neurons
+            ])
+            bias_vector = np.array([self.biases[neuron.id] for neuron in current_layer.neurons])
+            weighted_sum = np.dot(prev_outputs, weight_matrix) + bias_vector
             activated = current_layer.activate(weighted_sum)
-            for i, neuron in enumerate(current_layer.neurons):
-                neuron.output = activated[:, i]
             current_layer.outputs = activated
-        
+
         return self.layers[-1].outputs
     
+
     def backward(self, X: np.ndarray, y: np.ndarray, learning_rate: float) -> None:
         y_pred = self.forward(X)
 
@@ -218,44 +213,46 @@ class FFNN:
         elif self.loss == 'cross_entropy':
             d_loss = LossFunction.cross_entropy_derivative(y, y_pred)
         else:
-            raise ValueError("Only MSE loss is implemented in this version")
-        
+            raise ValueError("Fungsi loss tidak diimplementasi")
         deltas = [np.zeros_like(layer.outputs) for layer in self.layers]
-        
+
         output_layer = self.layers[-1]
         if output_layer.activation == 'softmax':
-            deltas[-1] = y_pred - y
+            deltas[-1] = y_pred - y 
         else:
             activation_derivative = self._get_activation_derivative(output_layer.activation, output_layer.outputs)
             deltas[-1] = d_loss * activation_derivative
-        
         for layer_idx in range(self.N_layer - 2, 0, -1):
             current_layer = self.layers[layer_idx]
             next_layer = self.layers[layer_idx + 1]
 
             activation_derivative = self._get_activation_derivative(current_layer.activation, current_layer.outputs)
+            weight_matrix = np.array([
+                [self.weights.get((current_neuron.id, next_neuron.id), 0.0) for next_neuron in next_layer.neurons]
+                for current_neuron in current_layer.neurons
+            ])
+            deltas[layer_idx] = np.dot(deltas[layer_idx + 1], weight_matrix.T) * activation_derivative
 
-            error = np.zeros_like(current_layer.outputs)
-
-            for i, current_neuron in enumerate(current_layer.neurons):
-                for j, next_neuron in enumerate(next_layer.neurons):
-                    weight = self.weights.get((current_neuron.id, next_neuron.id), 0.0)
-                    error[:, i] += deltas[layer_idx + 1][:, j] * weight
-            
-            deltas[layer_idx] = error * activation_derivative
-        
+        # Update bobot dan bias
         for layer_idx in range(self.N_layer - 1):
             current_layer = self.layers[layer_idx]
             next_layer = self.layers[layer_idx + 1]
-            
-            current_outputs = np.array([neuron.output for neuron in current_layer.neurons]).T
-            
-            for i, current_neuron in enumerate(current_layer.neurons):
-                for j, next_neuron in enumerate(next_layer.neurons):
-                    grad = np.mean(current_outputs[:, i] * deltas[layer_idx + 1][:, j])
-                    self.weights[(current_neuron.id, next_neuron.id)] -= learning_rate * grad
-                    self.biases[next_neuron.id] -= learning_rate * grad
-                    next_neuron.grad = grad
+
+            current_outputs = current_layer.outputs
+
+            # Update bobot menggunakan operasi vektor
+            weight_updates = learning_rate * np.dot(current_outputs.T, deltas[layer_idx + 1])
+
+            current_ids = [neuron.id for neuron in current_layer.neurons]
+            next_ids = [neuron.id for neuron in next_layer.neurons]
+
+            for i, current_id in enumerate(current_ids):
+                for j, next_id in enumerate(next_ids):
+                    self.weights[(current_id, next_id)] -= weight_updates[i, j]
+
+            bias_updates = learning_rate * np.mean(deltas[layer_idx + 1], axis=0)
+            for j, next_id in enumerate(next_ids):
+                self.biases[next_id] -= bias_updates[j]
                     
     
     def _get_activation_derivative(self, activation: str, x: np.ndarray) -> np.ndarray:
@@ -271,21 +268,25 @@ class FFNN:
             return np.ones_like(x)
         else:
             raise ValueError(f"Unknown activation function: {activation}")
-    
-    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int, learning_rate: float, batch_size: int = 32, verbose:bool = True) -> None:
-        for epoch in range(1,epochs+1):
-            for i in range(0, X.shape[0], batch_size):
-                X_batch = X[i:i + batch_size]
-                y_batch = y[i:i + batch_size]
+
+    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int, learning_rate: float, batch_size: int = 32, verbose: bool = True) -> None:
+        for epoch in tqdm(range(1, epochs + 1), desc="Training", unit="epoch"):
+            permutation = np.random.permutation(X.shape[0])
+            X_shuffled = X[permutation]
+            y_shuffled = y[permutation]
+
+            for i in tqdm(range(0, X.shape[0], batch_size), desc=f"Epoch {epoch}", leave=False, unit="batch"):
+                X_batch = X_shuffled[i:i + batch_size]
+                y_batch = y_shuffled[i:i + batch_size]
                 self.backward(X_batch, y_batch, learning_rate)
-            
-            if verbose and epoch % 10 == 0:
+
+            if verbose:
                 y_pred = self.forward(X)
                 if self.loss == 'mse':
                     loss = LossFunction.mse(y, y_pred)
                 elif self.loss == 'cross_entropy':
                     loss = LossFunction.cross_entropy(y, y_pred)
-                print(f"Epoch {epoch}, Loss: {loss:.4f}")
+                print(f"\nEpoch {epoch}, Loss: {loss:.4f}") 
     
     def predict(self, X: np.ndarray) -> np.ndarray:
         return self.forward(X)
