@@ -252,10 +252,12 @@ class FFNN:
             
             for i, current_neuron in enumerate(current_layer.neurons):
                 for j, next_neuron in enumerate(next_layer.neurons):
+                    if j == 1:
+                        next_neuron.grad = 0
                     grad = np.mean(current_outputs[:, i] * deltas[layer_idx + 1][:, j])
                     self.weights[(current_neuron.id, next_neuron.id)] -= learning_rate * grad
-                    self.biases[next_neuron.id] -= learning_rate * grad
-                    next_neuron.grad = grad
+                    next_neuron.grad += grad
+                self.biases[next_neuron.id] -= learning_rate * grad
                     
     
     def _get_activation_derivative(self, activation: str, x: np.ndarray) -> np.ndarray:
