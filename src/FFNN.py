@@ -270,12 +270,22 @@ class FFNN:
             raise ValueError(f"Unknown activation function: {activation}")
 
     def fit(self, X: np.ndarray, y: np.ndarray, epochs: int, learning_rate: float, batch_size: int = 32, verbose: bool = True) -> None:
-        for epoch in tqdm(range(1, epochs + 1), desc="Training", unit="epoch"):
+        for epoch in range(1, epochs + 1):
             permutation = np.random.permutation(X.shape[0])
             X_shuffled = X[permutation]
             y_shuffled = y[permutation]
 
-            for i in tqdm(range(0, X.shape[0], batch_size), desc=f"Epoch {epoch}", leave=False, unit="batch"):
+            if verbose:
+                # Use tqdm for progress bars if verbose
+                batch_range = tqdm(range(0, X.shape[0], batch_size), 
+                                desc=f"Epoch {epoch}", 
+                                leave=False, 
+                                unit="batch")
+            else:
+                # Regular range if not verbose
+                batch_range = range(0, X.shape[0], batch_size)
+
+            for i in batch_range:
                 X_batch = X_shuffled[i:i + batch_size]
                 y_batch = y_shuffled[i:i + batch_size]
                 self.backward(X_batch, y_batch, learning_rate)
@@ -286,7 +296,7 @@ class FFNN:
                     loss = LossFunction.mse(y, y_pred)
                 elif self.loss == 'cross_entropy':
                     loss = LossFunction.cross_entropy(y, y_pred)
-                print(f"\nEpoch {epoch}, Loss: {loss:.4f}") 
+                print(f"\nEpoch {epoch}, Loss: {loss:.4f}")
     
     def predict(self, X: np.ndarray) -> np.ndarray:
         return self.forward(X)
@@ -396,3 +406,33 @@ class FFNN:
         plt.title(f"Neural Network Architecture (Layers: {sorted(layers_to_show)})")
         plt.axis('off')
         plt.show()
+    def visualize_network_simple(self, show_weights=True, show_biases=True, show_gradients=True):
+        print("="*50)
+        print("NEURAL NETWORK ARCHITECTURE")
+        print("="*50)
+        
+        # Print layer information
+        for i, layer in enumerate(self.layers):
+            print(f"\nLayer {i+1} ({layer.id}):")
+            print("-"*20)
+            
+            # Print neurons in this layer
+            for neuron in layer.neurons:
+                print(f"Neuron {neuron.id}:")
+                
+                # Print bias if requested
+                if show_biases and neuron.id in self.biases:
+                    print(f"  Bias: {self.biases[neuron.id]:.4f}")
+                
+                # Print gradient if requested
+                if show_gradients:
+                    print(f"  Gradient: {neuron.grad:.4f}")
+        
+        # Print weights if requested
+        if show_weights:
+            print("\nWEIGHTS:")
+            print("-"*20)
+            for (from_id, to_id), weight in self.weights.items():
+                print(f"Connection {from_id} -> {to_id}: {weight:.4f}")
+        
+        print("\n" + "="*50)
