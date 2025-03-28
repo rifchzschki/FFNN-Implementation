@@ -195,6 +195,8 @@ class FFNN:
             
             activation = self.activation[layer_idx] if layer_idx < len(self.activation) else 'linear'
             self.layers.append(Layer(layer_idx, neurons_in_layer, activation))
+        for layer in self.layers:
+            print(f"Layer {layer.id}: {len(layer.neurons)} neurons, activation: {layer.activation}")
         
         # # Initialize weights (only forward connections)
         # for layer_idx in range(self.N_layer - 1):
@@ -254,8 +256,11 @@ class FFNN:
         deltas = [np.zeros_like(layer.outputs) for layer in self.layers]
 
         output_layer = self.layers[-1]
-        activation_derivative = self._get_activation_derivative(output_layer.activation, output_layer.outputs)
-        deltas[-1] = d_loss * activation_derivative
+        if (self.loss == 'cce' and output_layer.activation == 'softmax') or (self.loss == 'bce' and output_layer.activation == 'sigmoid'):
+            deltas[-1] = y_pred - y  # No activation derivative needed for Softmax+CCE
+        else:
+            activation_derivative = self._get_activation_derivative(output_layer.activation, output_layer.outputs)
+            deltas[-1] = d_loss * activation_derivative
         for i, neuron in enumerate(output_layer.neurons):
             neuron.grad = np.mean(deltas[-1][:, i])
         for layer_idx in range(self.N_layer - 2, 0, -1):
