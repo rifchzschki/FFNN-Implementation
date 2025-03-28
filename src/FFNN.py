@@ -61,32 +61,28 @@ class LossFunction:
     
     @staticmethod
     def mse_derivative(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
-        return 2 * (y_pred - y_true) / y_true.size
+        return -2 * np.mean(y_true - y_pred)
 
     @staticmethod
     def bce(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
         return -np.mean(y_true*np.log(y_pred)+(1-y_true)*np.log(1-y_pred))
 
-    def bce_derivative(W: np.ndarray, X: np.ndarray, y_true: np.ndarray) -> np.ndarray:
-        """
-        W: vektor weight
-        X: vektor input
-        y_true: vektor nilai y yang asli
-        """
-        z=np.dot(X,W)
-        y_pred=ActivationFunction.sigmoid(z)
-        return np.dot((1/X.shape[0])*X.T,(y_pred-y_true))
+    def bce_derivative(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+        epsilon = 1e-15
+        y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
+        return -np.mean((y_pred-y_true)/(y_pred*(1-y_pred)),axis=0)
+
     @staticmethod
     def cce(y_true: np.ndarray, y_pred: np.ndarray) -> float:
         epsilon = 1e-15
         y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
-        return -np.mean(y_true * np.log(y_pred))
+        return -np.sum(y_true * np.log(y_pred)) / y_true.shape[0]
     
     @staticmethod
     def cce_derivative(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
         epsilon = 1e-15
         y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
-        return (y_pred - y_true) / (y_pred * (1 - y_pred))
+        return -(y_true/y_pred)/y_true.shape[0]
 
 
 
