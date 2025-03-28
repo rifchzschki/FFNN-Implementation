@@ -75,6 +75,13 @@ class FFNN:
         self.bias: list[int] = []
         self.neurons: dict[int, Neuron] = {}
         self.layers: list[Layer] = []
+        self.build()
+
+    def build(self):
+        for i in range(self.N_layer):
+            for j in range(self.N_neuron_layer[i]):
+                
+        
 
     def __add_neuron(self, id: int) -> Neuron:
         """Menambahkan neuron baru ke dalam graph."""
