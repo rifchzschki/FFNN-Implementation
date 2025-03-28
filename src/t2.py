@@ -11,4 +11,4 @@ y = np.random.rand(100, 1)
 nn.fit(X, y, epochs=100, learning_rate=0.01, batch_size=16, verbose=True)
 
 predictions = nn.predict(X)
-nn.visualize_network()
+nn.visualize_selected_layers([0, 1])
