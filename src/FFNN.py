@@ -201,7 +201,7 @@ class FFNN:
                 for j, prev_neuron in enumerate(prev_layer.neurons):
                     weight = self.weights.get((prev_neuron.id, current_neuron.id), 0.0)
                     weighted_sum[:, i] += prev_outputs[:, j] * weight
-                    weighted_sum[:, i] += self.biases[current_neuron.id] 
+                weighted_sum[:, i] += self.biases[current_neuron.id] 
 
             activated = current_layer.activate(weighted_sum)
             for i, neuron in enumerate(current_layer.neurons):
