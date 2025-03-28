@@ -37,7 +37,7 @@ for i in range(1,layer_count):
     print("1. ReLU")
     print("2. Sigmoid")
     print("3. Linear")
-    print("4. Tangen Hiperbolik")
+    print("4. Tanh")
     print("5. Softmax")
     activation_input = input(outStr).lower()
     activation_func_sequence.append(activation_input)
@@ -63,4 +63,7 @@ ffnn_run = FFNN(N_layer=layer_count, loss=loss_input, activation=activation_func
 ffnn_run.configure()
 ffnn_run.set_input_values()
 ffnn_run.set_predicted_values()
+ffnn_run.forward()
 ffnn_run.debug()
+
+print(ffnn_run.output)

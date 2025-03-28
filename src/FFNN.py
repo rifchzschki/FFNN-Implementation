@@ -151,7 +151,7 @@ class FFNN:
         self.bias.append(0)
 
         for i in range(1,self.N_layer):
-            bias_inp = float(input(f"Masukkan nilai bias pada hidden layer ke{i}"))
+            bias_inp = float(input(f"Masukkan nilai bias pada hidden layer ke-{i}: "))
             self.bias.append(bias_inp)
 
 
@@ -171,7 +171,44 @@ class FFNN:
 
     def forward(self):
         '''Melakukan forward propagation untuk melihat hasil inferensi'''
-        pass
+        layer_output = []
+        for layer_idx in range(1, self.N_layer):
+            prev_layer = self.layers[layer_idx-1]
+            curr_layer = self.layers[layer_idx]
+
+            for curr_neuron_id in curr_layer.neurons_id:
+                unactivated_weight = 0
+
+                curr_neuron = self.neurons[curr_neuron_id]
+                for prev_neuron_id in prev_layer.neurons_id:
+                    prev_neuron = self.neurons[prev_neuron_id]
+                    unactivated_weight += (prev_neuron.weight * self.weight[(prev_neuron, curr_neuron)])
+
+                unactivated_weight += self.bias[layer_idx]
+
+                # print(f"Unactivated weight neuron ke-{curr_neuron_id}: {unactivated_weight}")
+                activated_weight = 0
+                activation_func = self.activation[layer_idx]
+                if activation_func == 'linear':
+                    activated_weight = ActivationFunction.linear(unactivated_weight)
+                elif activation_func == 'relu':
+                    activated_weight = ActivationFunction.relu(unactivated_weight)
+                elif activation_func == 'sigmoid':
+                    activated_weight = ActivationFunction.sigmoid(unactivated_weight)
+                elif activation_func == 'tanh':
+                    activated_weight = ActivationFunction.tanh(unactivated_weight)
+                elif activation_func == 'softmax':
+                    activated_weight = ActivationFunction.softmax(unactivated_weight)
+                else:
+                    raise ValueError("Fungsi aktivasi tidak valid!")
+                # print(f"Activated weight neuron ke-{curr_neuron_id}: {activated_weight}")
+                curr_neuron.set_weight(float(activated_weight))
+                layer_output.append(float(activated_weight))
+
+        self.output.append(layer_output)
+
+
+
 
     def __update_weight(self, tuple_neuron: tuple[Neuron, Neuron], weight_update: float) -> None:
         '''Melakukan perhitungan update bobot'''
@@ -273,14 +310,21 @@ class FFNN:
         for (neuron1, neuron2), weight in self.weight.items():
             print(f"Neuron {neuron1.id} ↔ Neuron {neuron2.id} : {weight}")
 
-        print("Bobot input")
+        print("\n=== Bobot input ===")
         input_layer = self.layers[0]
 
         for neuron_id in input_layer.neurons_id:
             neuron = self.neurons[neuron_id]
             print(f"Neuron {neuron.id} : {neuron.weight}")
 
-        print("Bobot prediksi")
+        print("\n=== Bobot Setiap Neuron ===")
+        for layer_idx, layer in enumerate(self.layers):
+            print(f"\nLayer ke-{layer_idx}:")
+            for neuron_id in layer.neurons_id:
+                neuron = self.neurons[neuron_id]
+                print(f"Neuron {neuron.id} : {neuron.weight}")
+
+        print("\n=== Bobot prediksi ===")
         output_layer = self.layers[self.N_layer-1]
         idx = 0
         for neuron_id in output_layer.neurons_id:
