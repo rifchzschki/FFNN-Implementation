@@ -248,6 +248,8 @@ class FFNN:
         else:
             activation_derivative = self._get_activation_derivative(output_layer.activation, output_layer.outputs)
             deltas[-1] = d_loss * activation_derivative
+        for i, neuron in enumerate(output_layer.neurons):
+            neuron.grad = np.mean(deltas[-1][:, i])
         for layer_idx in range(self.N_layer - 2, 0, -1):
             current_layer = self.layers[layer_idx]
             next_layer = self.layers[layer_idx + 1]
@@ -258,7 +260,8 @@ class FFNN:
                 for current_neuron in current_layer.neurons
             ])
             deltas[layer_idx] = np.dot(deltas[layer_idx + 1], weight_matrix.T) * activation_derivative
-
+            for i, neuron in enumerate(current_layer.neurons):
+                neuron.grad = np.mean(deltas[layer_idx][:, i]) 
         # Update bobot dan bias
         for layer_idx in range(self.N_layer - 1):
             current_layer = self.layers[layer_idx]
