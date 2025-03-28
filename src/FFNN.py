@@ -40,8 +40,19 @@ class ActivationFunction:
     
     @staticmethod
     def softmax(x: np.ndarray) -> np.ndarray:
-        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
-        return exp_x / np.sum(exp_x, axis=1, keepdims=True)
+        max_x = np.amax(x,1).reshape(x.shape[0],1)
+        e_x = np.exp(x-max_x)
+        return e_x / e_x.sum(axis=1, keepdims=True)
+
+    @staticmethod
+    def softmax_derivative(x: np.ndarray) -> np.ndarray:
+        s = ActivationFunction.softmax(x)
+        a = np.eye(s.shape[-1])
+        temp1 = np.zeros((s.shape[0], s.shape[1], s.shape[1]), dtype=np.float32)
+        temp2 = np.zeros((s.shape[0], s.shape[1], s.shape[1]), dtype=np.float32)
+        temp1 = np.einsum('ij,jk->ijk', s, a)
+        temp2 = np.einsum('ij,ik->ijk', s, s)
+        return temp1-temp2
 
 class LossFunction:
     @staticmethod
@@ -50,19 +61,30 @@ class LossFunction:
     
     @staticmethod
     def mse_derivative(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
-        return 2 * (y_pred - y_true) / y_true.size
-    
+        return -2 * np.mean(y_true - y_pred)
+
     @staticmethod
-    def cross_entropy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    def bce(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+        return -np.mean(y_true*np.log(y_pred)+(1-y_true)*np.log(1-y_pred))
+
+    def bce_derivative(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
         epsilon = 1e-15
         y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
-        return -np.mean(y_true * np.log(y_pred))
-    
+        return -np.mean((y_pred-y_true)/(y_pred*(1-y_pred)),axis=0)
+
     @staticmethod
-    def cross_entropy_derivative(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+    def cce(y_true: np.ndarray, y_pred: np.ndarray) -> float:
         epsilon = 1e-15
         y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
-        return (y_pred - y_true) / (y_pred * (1 - y_pred))
+        return -np.sum(y_true * np.log(y_pred)) / y_true.shape[0]
+    
+    @staticmethod
+    def cce_derivative(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+        epsilon = 1e-15
+        y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
+        return -(y_true/y_pred)/y_true.shape[0]
+
+
 
 class Neuron:
     def __init__(self, id: int):
@@ -210,8 +232,8 @@ class FFNN:
 
         if self.loss == 'mse':
             d_loss = LossFunction.mse_derivative(y, y_pred)
-        elif self.loss == 'cross_entropy':
-            d_loss = LossFunction.cross_entropy_derivative(y, y_pred)
+        elif self.loss == 'cce':
+            d_loss = LossFunction.cce_derivative(y, y_pred)
         else:
             raise ValueError("Fungsi loss tidak diimplementasi")
         deltas = [np.zeros_like(layer.outputs) for layer in self.layers]
@@ -265,7 +287,7 @@ class FFNN:
         elif activation == 'tanh':
             return ActivationFunction.tanh_derivative(x)
         elif activation == 'softmax':
-            return np.ones_like(x)
+            return ActivationFunction.softmax_derivative(x)
         else:
             raise ValueError(f"Unknown activation function: {activation}")
 
