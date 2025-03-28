@@ -49,13 +49,17 @@ class ActivationFunction:
     @staticmethod
     def softmax_derivative(x: np.ndarray) -> np.ndarray:
         s = ActivationFunction.softmax(x)
-        # a = np.eye(s.shape[-1])
-        # temp1 = np.zeros((s.shape[0], s.shape[1], s.shape[1]), dtype=np.float32)
-        # temp2 = np.zeros((s.shape[0], s.shape[1], s.shape[1]), dtype=np.float32)
-        # temp1 = np.einsum('ij,jk->ijk', s, a)
-        # temp2 = np.einsum('ij,ik->ijk', s, s)
-        # return temp1-temp2
         return s * (1 - s)
+
+    @staticmethod
+    def softmax_derivative_jacobian(x: np.ndarray)-> np.ndarray:
+        s = ActivationFunction.softmax(x)
+        a = np.eye(s.shape[-1])
+        temp1 = np.zeros((s.shape[0], s.shape[1], s.shape[1]), dtype=np.float32)
+        temp2 = np.zeros((s.shape[0], s.shape[1], s.shape[1]), dtype=np.float32)
+        temp1 = np.einsum('ij,jk->ijk', s, a)
+        temp2 = np.einsum('ij,ik->ijk', s, s)
+        return temp1-temp2
 
 class LossFunction:
     @staticmethod
