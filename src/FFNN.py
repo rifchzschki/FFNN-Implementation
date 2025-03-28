@@ -53,6 +53,7 @@ class Neuron:
     def __init__(self, id: int):
         self.id = id
         self.neighbors: set[Neuron] = set()
+        self.weight = 0
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Neuron):
@@ -71,6 +72,9 @@ class Neuron:
         print(f"Daftar tetangga dari Neuron dengan ID: {self.id}")
         for neuron in self.neighbors:
             print(neuron.id)
+    def set_weight(self, weight: float) -> None:
+        self.weight = weight
+
 class Layer:
     def __init__(self, id: int, neurons_id: list[int]):
         self.id: int = id
@@ -93,11 +97,28 @@ class FFNN:
         self.neurons: dict[int, Neuron] = {}
         self.layers: list[Layer] = []
         self.output : list[list[float]] = [] # Diisi ketika forward propagation
+        self.input: list[float] = []
+        self.predicted_values: list[float] = []
+    def set_input_values(self):
+        input_layer = self.layers[0]
+        print("Masukkan nilai input pada setiap neuron di layer input")
+        for neuron_id in input_layer.neurons_id:
+            input_weight = float(input(f"Masukkan nilai input pada neuron {neuron_id}: "))
+            self.neurons[neuron_id].set_weight(input_weight)
+            self.input.append(input_weight)
+
+    def set_predicted_values(self):
+        output_layer = self.layers[self.N_layer-1]
+        print("Masukkan nilai prediksi pada setiap neuron di layer output")
+        for neuron_id in output_layer.neurons_id:
+            predicted_weight = float(input(f"Masukkan nilai prediksi pada neuron {neuron_id}: "))
+            self.predicted_values.append(predicted_weight)
     def configure(self):
         '''konfigurasi lanjutan'''
 
         #masukkan layer dan neuron
         idx = 1
+        assigned_edges = set()
         for i in range(self.N_layer):
             new_neuronList = []
             for j in range(self.N_neuron_layer[i]):
@@ -117,16 +138,21 @@ class FFNN:
 
             for j in range(len(layer_cur.neurons_id)):
                 for k in range(len(layer_next.neurons_id)):
-                    self.neurons[layer_cur.neurons_id[j]].add_neighbor(self.neurons[layer_next.neurons_id[k]])
+                    neuron1 = self.neurons[layer_cur.neurons_id[j]]
+                    neuron2 = self.neurons[layer_next.neurons_id[k]]
+                    if (neuron1.id, neuron2.id) not in assigned_edges and (neuron2.id, neuron1.id) not in assigned_edges:
+                        weight_value = float(input(f"Masukkan bobot antara neuron {neuron1.id} dan neuron {neuron2.id}: "))
+                        self.weight[(neuron1, neuron2)] = weight_value
+                        self.weight[(neuron2, neuron1)] = weight_value
+                        assigned_edges.add((neuron1.id, neuron2.id))
+                    neuron1.add_neighbor(neuron2)
 
         #masukkan nilai bias dimulai dari hidden layer ke-1 sampai hidden layer terakhir kecuali output layer
         self.bias.append(0)
 
-        for i in range(1,self.N_layer-1):
+        for i in range(1,self.N_layer):
             bias_inp = float(input(f"Masukkan nilai bias pada hidden layer ke{i}"))
             self.bias.append(bias_inp)
-
-        self.bias.append(0)
 
 
 
@@ -241,6 +267,26 @@ class FFNN:
             layer.debug()
         for i in range (1, len(self.neurons)+1):
             self.neurons[i].print_neighbors()
-        for i in range (1, len(self.bias)-1):
+        for i in range (1, len(self.bias)):
             print(f"Bobot bias pada hidden layer ke-{i} : {self.bias[i]}")
+        print("\n=== Bobot antar Neuron ===")
+        for (neuron1, neuron2), weight in self.weight.items():
+            print(f"Neuron {neuron1.id} ↔ Neuron {neuron2.id} : {weight}")
+
+        print("Bobot input")
+        input_layer = self.layers[0]
+
+        for neuron_id in input_layer.neurons_id:
+            neuron = self.neurons[neuron_id]
+            print(f"Neuron {neuron.id} : {neuron.weight}")
+
+        print("Bobot prediksi")
+        output_layer = self.layers[self.N_layer-1]
+        idx = 0
+        for neuron_id in output_layer.neurons_id:
+            neuron = self.neurons[neuron_id]
+            print(f"Neuron {neuron.id} : {neuron.weight}, nilai prediksi: {self.predicted_values[idx]}")
+            idx+=1
+
+
      

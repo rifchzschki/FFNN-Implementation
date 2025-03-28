@@ -61,4 +61,6 @@ if loss_input not in valid_losses:
 ffnn_run = FFNN(N_layer=layer_count, loss=loss_input, activation=activation_func_sequence, N_neuron_layer=neuron_count_per_layer)
 
 ffnn_run.configure()
+ffnn_run.set_input_values()
+ffnn_run.set_predicted_values()
 ffnn_run.debug()
