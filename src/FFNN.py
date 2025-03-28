@@ -243,11 +243,8 @@ class FFNN:
         deltas = [np.zeros_like(layer.outputs) for layer in self.layers]
 
         output_layer = self.layers[-1]
-        if output_layer.activation == 'softmax':
-            deltas[-1] = y_pred - y 
-        else:
-            activation_derivative = self._get_activation_derivative(output_layer.activation, output_layer.outputs)
-            deltas[-1] = d_loss * activation_derivative
+        activation_derivative = self._get_activation_derivative(output_layer.activation, output_layer.outputs)
+        deltas[-1] = d_loss * activation_derivative
         for i, neuron in enumerate(output_layer.neurons):
             neuron.grad = np.mean(deltas[-1][:, i])
         for layer_idx in range(self.N_layer - 2, 0, -1):
