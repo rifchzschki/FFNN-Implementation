@@ -2,6 +2,7 @@ import numpy as np
 import pickle
 import networkx as nx
 import matplotlib.pyplot as plt
+from tqdm import tqdm 
 np.random.seed(42)
 class ActivationFunction:
     @staticmethod
@@ -252,7 +253,7 @@ class FFNN:
             
             for i, current_neuron in enumerate(current_layer.neurons):
                 for j, next_neuron in enumerate(next_layer.neurons):
-                    if j == 1:
+                    if j == 0:
                         next_neuron.grad = 0
                     grad = np.mean(current_outputs[:, i] * deltas[layer_idx + 1][:, j])
                     self.weights[(current_neuron.id, next_neuron.id)] -= learning_rate * grad
@@ -273,21 +274,25 @@ class FFNN:
             return np.ones_like(x)
         else:
             raise ValueError(f"Unknown activation function: {activation}")
-    
-    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int, learning_rate: float, batch_size: int = 32, verbose:bool = True) -> None:
-        for epoch in range(1,epochs+1):
-            for i in range(0, X.shape[0], batch_size):
-                X_batch = X[i:i + batch_size]
-                y_batch = y[i:i + batch_size]
+
+    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int, learning_rate: float, batch_size: int = 32, verbose: bool = True) -> None:
+        for epoch in tqdm(range(1, epochs + 1), desc="Training", unit="epoch"):
+            permutation = np.random.permutation(X.shape[0])
+            X_shuffled = X[permutation]
+            y_shuffled = y[permutation]
+
+            for i in tqdm(range(0, X.shape[0], batch_size), desc=f"Epoch {epoch}", leave=False, unit="batch"):
+                X_batch = X_shuffled[i:i + batch_size]
+                y_batch = y_shuffled[i:i + batch_size]
                 self.backward(X_batch, y_batch, learning_rate)
-            
-            if verbose and epoch % 10 == 0:
+
+            if verbose:
                 y_pred = self.forward(X)
                 if self.loss == 'mse':
                     loss = LossFunction.mse(y, y_pred)
                 elif self.loss == 'cross_entropy':
                     loss = LossFunction.cross_entropy(y, y_pred)
-                print(f"Epoch {epoch}, Loss: {loss:.4f}")
+                print(f"\nEpoch {epoch}, Loss: {loss:.4f}") 
     
     def predict(self, X: np.ndarray) -> np.ndarray:
         return self.forward(X)
