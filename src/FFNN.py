@@ -212,18 +212,24 @@ class FFNN:
         """Forward pass for a batch of samples"""
         if X.shape[1] != self.N_neuron_layer[0]:
             raise ValueError("Input size doesn't match network input layer size")
-        self.layers[0].outputs = X  
-        
+        self.layers[0].outputs = X 
+        assert not np.isnan(X).any(), "Input contains NaN!"
+        if np.isnan(self.layers[0].outputs).any():
+            raise ValueError("NaN detected in layer 0 outputs.")
         for layer_idx in range(1, self.N_layer):
             prev_layer = self.layers[layer_idx - 1]
             current_layer = self.layers[layer_idx]
             prev_outputs = prev_layer.outputs
+            if np.isnan(prev_outputs).any():
+                raise ValueError(f"NaN detected in layer {layer_idx - 1} outputs.")
             weight_matrix = np.array([
                 [self.weights.get((prev_neuron.id, current_neuron.id), 0.0) for current_neuron in current_layer.neurons]
                 for prev_neuron in prev_layer.neurons
             ])
             bias_vector = np.array([self.biases[neuron.id] for neuron in current_layer.neurons])
             weighted_sum = np.dot(prev_outputs, weight_matrix) + bias_vector
+            if np.isnan(weighted_sum).any():
+                raise ValueError(f"NaN detected in layer {layer_idx} weighted sum.")
             activated = current_layer.activate(weighted_sum)
             current_layer.outputs = activated
 
@@ -269,7 +275,7 @@ class FFNN:
 
             # Update bobot menggunakan operasi vektor
             weight_updates = learning_rate * np.dot(current_outputs.T, deltas[layer_idx + 1])
-
+            weight_updates = np.clip(weight_updates, -10000.0, 10000.0)
             current_ids = [neuron.id for neuron in current_layer.neurons]
             next_ids = [neuron.id for neuron in next_layer.neurons]
 
