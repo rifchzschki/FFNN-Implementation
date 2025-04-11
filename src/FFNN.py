@@ -106,7 +106,10 @@ class FFNN:
         self.weights = []
         self.biases = []
         self.outputs = [] 
-        self.z_values = [] 
+        self.z_values = []
+        self.weight_gradients = []
+        self.bias_gradients = []
+        self.neuron_gradients = []
 
         for i in range(len(layer_sizes) - 1):
             if weight_method == 'zero':
@@ -127,8 +130,12 @@ class FFNN:
             self.weights.append(w)
             self.biases.append(b)
             
+            self.weight_gradients.append(np.zeros_like(w))
+            self.bias_gradients.append(np.zeros_like(b))
+            
         self.outputs = [np.zeros(size) for size in layer_sizes]
         self.z_values = [np.zeros(size) for size in layer_sizes[1:]]
+        self.neuron_gradients = [np.zeros(size) for size in layer_sizes]
         
             
     
@@ -222,26 +229,37 @@ class FFNN:
             raise ValueError(f"Unsupported loss function: {self.loss}")
         
         delta = d_loss
+        # Store gradient for output layer
+        self.neuron_gradients[-1] = delta.mean(axis=0)
         
         for i in range(self.N_layer - 2, -1, -1):
             if i < self.N_layer - 2 or not ((self.loss == 'cce' and self.activations[-1] == 'softmax') or 
-                                          (self.loss == 'bce' and self.activations[-1] == 'sigmoid')):
+                                        (self.loss == 'bce' and self.activations[-1] == 'sigmoid')):
                 delta = delta * self._activate_derivative(self.z_values[i], self.activations[i])
             
             # Calculate gradients
             dW = np.dot(self.outputs[i].T, delta) / batch_size
             db = np.mean(delta, axis=0)
+            
+            # Store gradients
+            self.weight_gradients[i] = dW
+            self.bias_gradients[i] = db
+            
             # Regularization
             if self.regularization:
                 reg_grad = self._regularization_gradient(self.weights[i])
                 dW += reg_grad / batch_size
-            # Update weights and biases
+            #Update
             self.weights[i] -= learning_rate * dW
             self.biases[i] -= learning_rate * db
             
-            # Propagate error to previous layer (if not the input layer)
+            # Propagate error to previous layer
             if i > 0:
                 delta = np.dot(delta, self.weights[i].T)
+                self.neuron_gradients[i] = np.mean(delta, axis=0)
+
+        if len(self.layer_sizes) > 2:
+            self.neuron_gradients[0] = np.mean(delta, axis=0)
     
     def fit(self, X, y, epochs=10, learning_rate=0.01, batch_size=32, verbose=True, track_loss=True):
         """
@@ -312,8 +330,8 @@ class FFNN:
         with open(filename, 'rb') as f:
             return pickle.load(f)
             
-    def visualize_network(self, show_weights=True):
-        """Simple network visualization with weights"""
+    def visualize_network(self, show_weights=True, show_gradients=True):
+        """Network visualization with weights and gradients"""
         G = nx.DiGraph()
 
         node_positions = {}
@@ -322,7 +340,8 @@ class FFNN:
         for layer_idx, size in enumerate(self.layer_sizes):
             for neuron_idx in range(size):
                 node_id = f"L{layer_idx}_N{neuron_idx}"
-                G.add_node(node_id, layer=layer_idx)
+                gradient = self.neuron_gradients[layer_idx][neuron_idx] if layer_idx < len(self.neuron_gradients) else 0
+                G.add_node(node_id, layer=layer_idx, gradient=gradient)
                 node_positions[node_id] = (layer_idx, -neuron_idx + size/2)
                 node_count += 1
 
@@ -332,31 +351,69 @@ class FFNN:
                     from_node = f"L{layer_idx}_N{i}"
                     to_node = f"L{layer_idx+1}_N{j}"
                     weight = self.weights[layer_idx][i, j]
-                    G.add_edge(from_node, to_node, weight=weight)
+                    weight_gradient = self.weight_gradients[layer_idx][i, j]
+                    G.add_edge(from_node, to_node, weight=weight, gradient=weight_gradient)
         
         # Plot
         plt.figure(figsize=(10, 8))
-        nx.draw_networkx_nodes(G, node_positions, node_size=500, node_color='skyblue')
+        
+        # Color nodes based on gradient
+        if show_gradients and any(np.any(g != 0) for g in self.neuron_gradients):
+            # Get all gradients flattened for normalization
+            all_gradients = [abs(g) for layer_grads in self.neuron_gradients for g in layer_grads]
+            max_grad = max(all_gradients) if all_gradients else 1.0
+            
+            # Create color map for nodes
+            node_colors = []
+            for node in G.nodes():
+                gradient = abs(G.nodes[node].get('gradient', 0))
+                intensity = min(gradient / max_grad, 1.0) if max_grad > 0 else 0
+                # Use a heat map: white (small gradient) to red (large gradient)
+                node_colors.append((1.0, 1.0-intensity, 1.0-intensity))
+        else:
+            node_colors = ['skyblue'] * len(G.nodes())
+        
+        nx.draw_networkx_nodes(G, node_positions, node_size=500, node_color=node_colors)
 
         if show_weights:
             max_weight = max(abs(w) for _, _, w in G.edges.data('weight'))
+            max_grad = max(abs(g) for _, _, g in G.edges.data('gradient')) if show_gradients else 1.0
+            
             for u, v, d in G.edges(data=True):
                 weight = d['weight']
                 width = 1 + 3 * abs(weight) / max_weight
-                color = 'red' if weight < 0 else 'green'
+                
+                # Color based on weight sign and gradient magnitude if showing gradients
+                if show_gradients and max_grad > 0:
+                    gradient = abs(d.get('gradient', 0))
+                    intensity = min(gradient / max_grad, 1.0) if max_grad > 0 else 0
+                    # Base color on weight sign, intensity on gradient
+                    color = 'darkred' if weight < 0 else 'darkgreen'
+                    # Make edges more transparent for small gradients
+                    alpha = 0.2 + 0.8 * intensity
+                else:
+                    color = 'red' if weight < 0 else 'green'
+                    alpha = 1.0
+                    
                 nx.draw_networkx_edges(G, node_positions, edgelist=[(u, v)], 
-                                      width=width, edge_color=color, arrows=True)
+                                    width=width, edge_color=color, arrows=True, alpha=alpha)
         else:
             nx.draw_networkx_edges(G, node_positions, arrows=True)
             
         nx.draw_networkx_labels(G, node_positions)
-        plt.title("Neural Network Architecture")
+        
+        # Add legend
+        if show_gradients:
+            plt.figtext(0.01, 0.01, "Node color: white (small gradient) to red (large gradient)", fontsize=9)
+            plt.figtext(0.01, 0.03, "Edge opacity: transparent (small gradient) to solid (large gradient)", fontsize=9)
+        
+        plt.title("Neural Network Architecture with Gradients")
         plt.axis('off')
         plt.show()
 
-    def visualize_selected_layers(self, layers_to_show, show_weights=True):
+    def visualize_selected_layers(self, layers_to_show, show_weights=True, show_gradients=True):
         """
-        Visualize only selected layers of the network
+        Visualize only selected layers of the network with gradient information
         """
         G = nx.DiGraph()
 
@@ -369,7 +426,8 @@ class FFNN:
             size = self.layer_sizes[layer_idx]
             for neuron_idx in range(size):
                 node_id = f"L{layer_idx}_N{neuron_idx}"
-                G.add_node(node_id, layer=layer_idx)
+                gradient = self.neuron_gradients[layer_idx][neuron_idx] if layer_idx < len(self.neuron_gradients) else 0
+                G.add_node(node_id, layer=layer_idx, gradient=gradient)
                 node_positions[node_id] = (layer_idx, -neuron_idx + size/2)
 
         for i in range(len(layers_to_show) - 1):
@@ -382,29 +440,76 @@ class FFNN:
                         from_node = f"L{current_layer}_N{ni}"
                         to_node = f"L{next_layer}_N{nj}"
                         weight = self.weights[current_layer][ni, nj]
-                        G.add_edge(from_node, to_node, weight=weight)
+                        weight_gradient = self.weight_gradients[current_layer][ni, nj]
+                        G.add_edge(from_node, to_node, weight=weight, gradient=weight_gradient)
 
         plt.figure(figsize=(12, 8))
-        nx.draw_networkx_nodes(G, node_positions, node_size=500, node_color='skyblue')
+        
+        # Color nodes based on gradient
+        if show_gradients and any(np.any(g != 0) for g in self.neuron_gradients):
+            # Get all gradients for selected layers
+            selected_gradients = []
+            for layer_idx in layers_to_show:
+                if layer_idx < len(self.neuron_gradients):
+                    selected_gradients.extend([abs(g) for g in self.neuron_gradients[layer_idx]])
+            
+            max_grad = max(selected_gradients) if selected_gradients else 1.0
+            
+            # Create color map for nodes
+            node_colors = []
+            for node in G.nodes():
+                gradient = abs(G.nodes[node].get('gradient', 0))
+                intensity = min(gradient / max_grad, 1.0) if max_grad > 0 else 0
+                # Use a heat map: white (small gradient) to red (large gradient)
+                node_colors.append((1.0, 1.0-intensity, 1.0-intensity))
+        else:
+            node_colors = ['skyblue'] * len(G.nodes())
+        
+        nx.draw_networkx_nodes(G, node_positions, node_size=500, node_color=node_colors)
 
-        if show_weights:
-            if G.edges:
-                max_weight = max(abs(w) for _, _, w in G.edges.data('weight'))
-                for u, v, d in G.edges(data=True):
-                    weight = d['weight']
-                    width = 1 + 3 * abs(weight) / max_weight
+        if show_weights and G.edges:
+            max_weight = max(abs(w) for _, _, w in G.edges.data('weight'))
+            max_grad = max(abs(g) for _, _, g in G.edges.data('gradient')) if show_gradients else 1.0
+            
+            for u, v, d in G.edges(data=True):
+                weight = d['weight']
+                width = 1 + 3 * abs(weight) / max_weight
+                
+                # Color based on weight sign and gradient magnitude if showing gradients
+                if show_gradients and max_grad > 0:
+                    gradient = abs(d.get('gradient', 0))
+                    intensity = min(gradient / max_grad, 1.0) if max_grad > 0 else 0
+                    # Base color on weight sign, intensity on gradient
+                    color = 'darkred' if weight < 0 else 'darkgreen'
+                    # Make edges more transparent for small gradients
+                    alpha = 0.2 + 0.8 * intensity
+                else:
                     color = 'red' if weight < 0 else 'green'
-                    nx.draw_networkx_edges(G, node_positions, edgelist=[(u, v)], 
-                                        width=width, edge_color=color, arrows=True)
+                    alpha = 1.0
+                    
+                nx.draw_networkx_edges(G, node_positions, edgelist=[(u, v)], 
+                                    width=width, edge_color=color, arrows=True, alpha=alpha)
 
-                    if show_weights:
-                        edge_label = {(u, v): f"{weight:.2f}"}
-                        nx.draw_networkx_edge_labels(G, node_positions, edge_labels=edge_label, 
-                                                font_size=8, label_pos=0.3)
+                if show_weights:
+                    label = f"{weight:.2f}"
+                    if show_gradients:
+                        label += f" (g:{d.get('gradient', 0):.2e})"
+                    edge_label = {(u, v): label}
+                    nx.draw_networkx_edge_labels(G, node_positions, edge_labels=edge_label, 
+                                            font_size=8, label_pos=0.3)
         else:
             nx.draw_networkx_edges(G, node_positions, arrows=True)
 
-        nx.draw_networkx_labels(G, node_positions)
+        # Add node labels with gradients
+        node_labels = {}
+        for node in G.nodes():
+            gradient = G.nodes[node].get('gradient', 0)
+            label = node
+            if show_gradients:
+                label += f"\ng:{gradient:.2e}"
+            node_labels[node] = label
+        
+        nx.draw_networkx_labels(G, node_positions, labels=node_labels)
 
         for layer_idx in layers_to_show:
             if layer_idx < len(self.layer_sizes):
@@ -412,7 +517,12 @@ class FFNN:
                         f"Layer {layer_idx}\n({self.activations[layer_idx] if layer_idx < len(self.activations) else 'input'})", 
                         ha='center')
         
-        plt.title(f"Neural Network Architecture (Selected Layers: {sorted(layers_to_show)})")
+        # Add legend
+        if show_gradients:
+            plt.figtext(0.01, 0.01, "Node color: white (small gradient) to red (large gradient)", fontsize=9)
+            plt.figtext(0.01, 0.03, "Edge opacity: transparent (small gradient) to solid (large gradient)", fontsize=9)
+        
+        plt.title(f"Neural Network Architecture (Selected Layers: {sorted(layers_to_show)}) with Gradients")
         plt.axis('off')
         plt.tight_layout()
         plt.show()
@@ -429,5 +539,57 @@ class FFNN:
         plt.tight_layout()
         plt.show()
 
+    def save_to_txt(self, filename):
+        """
+        Save the neural network parameters and gradients to a text file.
+        
+        Args:
+            filename (str): Path to the output text file
+        """
+        with open(filename, 'w') as f:
+            f.write("Feed-Forward Neural Network Configuration\n")
+            f.write("=======================================\n\n")
+            
+            # architecture
+            f.write(f"Architecture: {self.layer_sizes}\n")
+            f.write(f"Activation functions: {self.activations}\n")
+            f.write(f"Loss function: {self.loss}\n")
+            f.write(f"Regularization: {self.regularization}, lambda={self.lambda_}\n\n")
+            
+            # Write neuron gradients for input layer
+            f.write(f"Input Layer (Layer 0) Gradients:\n")
+            f.write("-" * 40 + "\n")
+            for i, grad in enumerate(self.neuron_gradients[0]):
+                f.write(f"  Neuron {i}: {grad:.6e}\n")
+            f.write("\n")
+            
+            # Write weights, biases and gradients for each layer
+            for i in range(len(self.weights)):
+                from_layer = i
+                to_layer = i + 1
+                
+                f.write(f"Layer {from_layer} -> Layer {to_layer}\n")
+                f.write("-" * 40 + "\n")
+                
+                # Write weights and weight gradients
+                f.write(f"Weights (shape: {self.weights[i].shape}):\n")
+                f.write(f"  From Layer {from_layer} neurons to Layer {to_layer} neurons:\n")
+                for row_idx, row in enumerate(self.weights[i]):
+                    w_row = ' '.join([f'{w:.6f}' for w in row])
+                    g_row = ' '.join([f'{g:.6e}' for g in self.weight_gradients[i][row_idx]])
+                    f.write(f"  Neuron {row_idx} -> {w_row}\n")
+                    f.write(f"    Gradients -> {g_row}\n")
+                
+
+                f.write(f"\nBiases for Layer {to_layer} neurons:\n")
+                b_vals = ' '.join([f'{b:.6f}' for b in self.biases[i]])
+                g_vals = ' '.join([f'{g:.6e}' for g in self.bias_gradients[i]])
+                f.write(f"  Values: {b_vals}\n")
+                f.write(f"  Gradients: {g_vals}\n")
+                
+                f.write(f"\nNeuron Gradients for Layer {to_layer}:\n")
+                for j, grad in enumerate(self.neuron_gradients[to_layer]):
+                    f.write(f"  Neuron {j}: {grad:.6e}\n")
+                f.write("\n")
 
 
