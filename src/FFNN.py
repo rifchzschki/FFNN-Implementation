@@ -282,7 +282,7 @@ class FFNN:
 
                 # Regularization loss
                 if self.regularization:
-                    reg_loss = self._calculate_regularization_loss()
+                    reg_loss = self._regularization_loss()
                     total_loss = loss + reg_loss
                     if track_loss:
                         loss_history.append(total_loss)
